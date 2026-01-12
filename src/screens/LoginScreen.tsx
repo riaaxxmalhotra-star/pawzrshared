@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +13,7 @@ import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInWithApple, isLoading } = useAuth();
+  const { signInWithGoogle, isLoading } = useAuth();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -48,24 +47,6 @@ export default function LoginScreen() {
               </>
             )}
           </TouchableOpacity>
-
-          {/* Apple Sign In - iOS only */}
-          {Platform.OS === 'ios' && (
-            <TouchableOpacity
-              style={styles.appleButton}
-              onPress={signInWithApple}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <>
-                  <Ionicons name="logo-apple" size={20} color={colors.white} />
-                  <Text style={styles.appleButtonText}>Continue with Apple</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Terms */}
@@ -133,21 +114,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.gray[700],
-  },
-  appleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.black,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    gap: 12,
-  },
-  appleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.white,
   },
   terms: {
     marginTop: 32,

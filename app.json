@@ -16,7 +16,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pawzr.app",
-      "usesAppleSignIn": true,
       "infoPlist": {
         "CFBundleURLTypes": [
           {
@@ -45,9 +44,6 @@
       "favicon": "./assets/favicon.png"
     },
     "scheme": "pawzr",
-    "plugins": [
-      "expo-apple-authentication"
-    ],
     "extra": {
       "eas": {
         "projectId": "380a56f3-19c6-4d20-acca-42b5a7e3a349"

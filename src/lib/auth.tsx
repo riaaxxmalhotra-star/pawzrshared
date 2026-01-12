@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Google from 'expo-auth-session/providers/google';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { authApi } from './api';
 
@@ -19,7 +18,6 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   signInWithGoogle: () => Promise<void>;
-  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   updateUserRole: (role: string) => Promise<void>;
 }
@@ -104,39 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function signInWithApple() {
-    try {
-      setIsLoading(true);
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-
-      const result = await authApi.appleToken(
-        credential.identityToken!,
-        {
-          email: credential.email,
-          fullName: credential.fullName,
-        }
-      );
-
-      if (result.user) {
-        setUser(result.user);
-        await AsyncStorage.setItem('user', JSON.stringify(result.user));
-        await AsyncStorage.setItem('token', result.token || '');
-      }
-    } catch (error: any) {
-      if (error.code !== 'ERR_CANCELED') {
-        console.error('Apple sign in error:', error);
-        throw error;
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
   async function signOut() {
     try {
       setIsLoading(true);
@@ -164,7 +129,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isLoading,
         signInWithGoogle,
-        signInWithApple,
         signOut,
         updateUserRole,
       }}
