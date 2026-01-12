@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 
@@ -19,10 +20,9 @@ export default function LoginScreen() {
       <View style={styles.content}>
         {/* Logo and Title */}
         <View style={styles.header}>
-          <Image
-            source={require('../../assets/icon.png')}
-            style={styles.logo}
-          />
+          <View style={styles.logoContainer}>
+            <Ionicons name="paw" size={80} color={colors.primary} />
+          </View>
           <Text style={styles.title}>Pawzr</Text>
           <Text style={styles.subtitle}>Your Pet's Best Companion</Text>
         </View>
@@ -72,10 +72,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 60,
   },
-  logo: {
+  logoContainer: {
     width: 120,
     height: 120,
-    borderRadius: 24,
+    borderRadius: 60,
+    backgroundColor: colors.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 20,
   },
   title: {
