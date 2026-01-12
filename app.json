@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "pawzr-native",
-    "slug": "pawzr-native",
+    "name": "Pawzr",
+    "slug": "pawzr",
+    "owner": "riaaxxmalhotra",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,21 +11,47 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FFFBF5"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pawzr.app",
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
+            ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
+            ]
+          }
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FFFBF5"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.pawzr.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "scheme": "pawzr",
+    "plugins": [
+      "expo-apple-authentication"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "380a56f3-19c6-4d20-acca-42b5a7e3a349"
+      }
     }
   }
 }
