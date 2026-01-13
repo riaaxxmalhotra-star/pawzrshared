@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { Platform } from 'react-native';
 import { authApi } from './api';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -61,6 +63,8 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
+  isAppleAuthAvailable: boolean;
   signOut: () => Promise<void>;
   updateUserRole: (role: string) => Promise<void>;
   completeOnboarding: () => Promise<void>;
@@ -75,6 +79,7 @@ const GOOGLE_IOS_CLIENT_ID = '1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1.app
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAppleAuthAvailable, setIsAppleAuthAvailable] = useState(false);
 
   // Google Auth - using Expo proxy for Expo Go compatibility
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -82,6 +87,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     iosClientId: GOOGLE_IOS_CLIENT_ID,
     webClientId: GOOGLE_WEB_CLIENT_ID,
   });
+
+  // Check Apple Auth availability on iOS
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      AppleAuthentication.isAvailableAsync().then(setIsAppleAuthAvailable);
+    }
+  }, []);
 
   // Check for stored user on mount
   useEffect(() => {
@@ -243,6 +255,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function signInWithApple() {
+    try {
+      setIsLoading(true);
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      console.log('Apple auth credential:', JSON.stringify(credential, null, 2));
+
+      // Get user info from credential
+      const appleEmail = credential.email || `apple_${credential.user}@privaterelay.appleid.com`;
+      const appleName = credential.fullName
+        ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
+        : 'Apple User';
+
+      // Check for saved profile by email first
+      const savedProfileData = await AsyncStorage.getItem(`userProfile_${appleEmail}`);
+
+      let finalUser: User;
+
+      if (savedProfileData) {
+        // Found saved profile - restore it
+        const savedProfile = JSON.parse(savedProfileData);
+        console.log('Restoring saved profile for:', appleEmail);
+        finalUser = {
+          ...savedProfile,
+          id: credential.user,
+          name: appleName || savedProfile.name,
+          // Preserve all onboarding data
+          role: savedProfile.role,
+          onboardingComplete: savedProfile.onboardingComplete,
+          phone: savedProfile.phone,
+          addressLine1: savedProfile.addressLine1,
+          addressLine2: savedProfile.addressLine2,
+          landmark: savedProfile.landmark,
+          pincode: savedProfile.pincode,
+          city: savedProfile.city,
+          state: savedProfile.state,
+          bio: savedProfile.bio,
+          dob: savedProfile.dob,
+          photos: savedProfile.photos,
+          pets: savedProfile.pets,
+        };
+      } else {
+        // New user from Apple
+        finalUser = {
+          id: credential.user,
+          email: appleEmail,
+          name: appleName,
+          role: 'OWNER',
+          onboardingComplete: false,
+        };
+      }
+
+      console.log('Final user from Apple:', JSON.stringify(finalUser, null, 2));
+      setUser(finalUser);
+      await AsyncStorage.setItem('user', JSON.stringify(finalUser));
+      await AsyncStorage.setItem(`userProfile_${finalUser.email}`, JSON.stringify(finalUser));
+
+    } catch (error: any) {
+      if (error.code === 'ERR_CANCELED') {
+        console.log('Apple Sign In was cancelled');
+      } else {
+        console.error('Apple sign in error:', error);
+        throw error;
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function signOut() {
     try {
       setIsLoading(true);
@@ -302,6 +388,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isLoading,
         signInWithGoogle,
+        signInWithApple,
+        isAppleAuthAvailable,
         signOut,
         updateUserRole,
         completeOnboarding,

@@ -6,14 +6,16 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 
 export default function LoginScreen() {
-  const { signInWithGoogle, isLoading } = useAuth();
+  const { signInWithGoogle, signInWithApple, isAppleAuthAvailable, isLoading } = useAuth();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -29,6 +31,17 @@ export default function LoginScreen() {
 
         {/* Auth Buttons */}
         <View style={styles.authButtons}>
+          {/* Apple Sign In - iOS only */}
+          {Platform.OS === 'ios' && isAppleAuthAvailable && (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={12}
+              style={styles.appleButton}
+              onPress={signInWithApple}
+            />
+          )}
+
           {/* Google Sign In */}
           <TouchableOpacity
             style={styles.googleButton}
@@ -93,6 +106,10 @@ const styles = StyleSheet.create({
   },
   authButtons: {
     gap: 16,
+  },
+  appleButton: {
+    width: '100%',
+    height: 52,
   },
   googleButton: {
     flexDirection: 'row',
