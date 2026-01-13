@@ -61,7 +61,7 @@ export default function CalendarScreen() {
       case 'GROOMER':
         return { color: '#8B5CF6', title: 'Appointments' };
       case 'LOVER':
-        return { color: '#EC4899', title: 'Bookings' };
+        return { color: '#EC4899', title: 'My Schedule' };
       default:
         return { color: colors.primary, title: 'Calendar' };
     }
@@ -115,6 +115,37 @@ export default function CalendarScreen() {
     }
   };
 
+  const getServiceForRole = (type: 'service1' | 'service2' | 'service3' | 'service4' | 'service5') => {
+    if (userRole === 'LOVER') {
+      const loverServices = {
+        service1: 'Dog Walking',
+        service2: 'Pet Sitting',
+        service3: 'Overnight Stay',
+        service4: 'Pet Meetup',
+        service5: 'Day Care',
+      };
+      return loverServices[type];
+    } else if (userRole === 'VET') {
+      const vetServices = {
+        service1: 'Annual Checkup',
+        service2: 'Vaccination',
+        service3: 'Dental Cleaning',
+        service4: 'Follow-up',
+        service5: 'Surgery Consultation',
+      };
+      return vetServices[type];
+    } else {
+      const groomerServices = {
+        service1: 'Full Grooming',
+        service2: 'Bath & Brush',
+        service3: 'De-shedding',
+        service4: 'Nail Trimming',
+        service5: 'Full Grooming',
+      };
+      return groomerServices[type];
+    }
+  };
+
   const getMockBookings = (): DayBookings => {
     const today = new Date();
     const tomorrow = new Date(today);
@@ -133,26 +164,26 @@ export default function CalendarScreen() {
           customerName: 'Rahul Kumar',
           customerPhone: '+91 98765 43210',
           petName: 'Bruno',
-          petType: 'Dog',
-          service: userRole === 'VET' ? 'Annual Checkup' : 'Full Grooming',
+          petType: 'Golden Retriever',
+          service: getServiceForRole('service1'),
           date: formatDate(today),
           time: '10:00 AM',
-          duration: 30,
+          duration: userRole === 'LOVER' ? 60 : 30,
           status: 'confirmed',
-          price: 800,
+          price: userRole === 'LOVER' ? 400 : 800,
         },
         {
           id: '2',
           customerName: 'Priya Sharma',
           customerPhone: '+91 87654 32109',
           petName: 'Whiskers',
-          petType: 'Cat',
-          service: userRole === 'VET' ? 'Vaccination' : 'Bath & Brush',
+          petType: 'Persian Cat',
+          service: getServiceForRole('service2'),
           date: formatDate(today),
-          time: '2:30 PM',
-          duration: 45,
+          time: userRole === 'LOVER' ? '6:00 PM' : '2:30 PM',
+          duration: userRole === 'LOVER' ? 180 : 45,
           status: 'pending',
-          price: 600,
+          price: userRole === 'LOVER' ? 800 : 600,
         },
       ],
       [formatDate(tomorrow)]: [
@@ -161,13 +192,14 @@ export default function CalendarScreen() {
           customerName: 'Amit Patel',
           customerPhone: '+91 76543 21098',
           petName: 'Max',
-          petType: 'Dog',
-          service: userRole === 'VET' ? 'Dental Cleaning' : 'De-shedding',
+          petType: 'Labrador',
+          service: getServiceForRole('service3'),
           date: formatDate(tomorrow),
-          time: '11:00 AM',
-          duration: 60,
+          time: userRole === 'LOVER' ? '8:00 PM' : '11:00 AM',
+          duration: userRole === 'LOVER' ? 720 : 60,
           status: 'confirmed',
-          price: 1200,
+          price: userRole === 'LOVER' ? 1500 : 1200,
+          notes: userRole === 'LOVER' ? 'Overnight care - pickup at 8 PM, drop at 8 AM' : undefined,
         },
       ],
       [formatDate(dayAfter)]: [
@@ -176,14 +208,14 @@ export default function CalendarScreen() {
           customerName: 'Neha Gupta',
           customerPhone: '+91 65432 10987',
           petName: 'Coco',
-          petType: 'Dog',
-          service: userRole === 'VET' ? 'Follow-up' : 'Nail Trimming',
+          petType: 'Beagle',
+          service: getServiceForRole('service4'),
           date: formatDate(dayAfter),
           time: '3:00 PM',
-          duration: 20,
+          duration: userRole === 'LOVER' ? 90 : 20,
           status: 'pending',
           notes: 'First time customer',
-          price: 300,
+          price: userRole === 'LOVER' ? 300 : 300,
         },
       ],
       [formatDate(nextWeek)]: [
@@ -192,13 +224,14 @@ export default function CalendarScreen() {
           customerName: 'Vikram Singh',
           customerPhone: '+91 54321 09876',
           petName: 'Rocky',
-          petType: 'Dog',
-          service: userRole === 'VET' ? 'Surgery Consultation' : 'Full Grooming',
+          petType: 'German Shepherd',
+          service: getServiceForRole('service5'),
           date: formatDate(nextWeek),
           time: '10:30 AM',
-          duration: 45,
+          duration: userRole === 'LOVER' ? 480 : 45,
           status: 'confirmed',
-          price: 1500,
+          price: userRole === 'LOVER' ? 1200 : 1500,
+          notes: userRole === 'LOVER' ? 'Full day care while owner is at work' : undefined,
         },
       ],
     };

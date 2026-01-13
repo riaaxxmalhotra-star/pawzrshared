@@ -27,6 +27,16 @@
             "CFBundleURLSchemes": [
               "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
             ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
+            ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
+            ]
           }
         ],
         "ITSAppUsesNonExemptEncryption": false
@@ -48,6 +58,12 @@
       "eas": {
         "projectId": "380a56f3-19c6-4d20-acca-42b5a7e3a349"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/380a56f3-19c6-4d20-acca-42b5a7e3a349"
     }
   }
 }

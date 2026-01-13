@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -169,8 +170,54 @@ export default function AadhaarVerificationScreen({
     }
   };
 
+  const handleOpenAadhaarApp = async () => {
+    // Try to open mAadhaar app first (iOS and Android)
+    const mAadhaarScheme = Platform.OS === 'ios'
+      ? 'maadhaar://'
+      : 'com.uidai.maadhaar://';
+
+    const uidaiWebsite = 'https://myaadhaar.uidai.gov.in/';
+    const playStoreLink = 'https://play.google.com/store/apps/details?id=in.gov.uidai.mAadhaarPlus';
+    const appStoreLink = 'https://apps.apple.com/in/app/maadhaar/id1435469474';
+
+    try {
+      // Try to open mAadhaar app
+      const canOpen = await Linking.canOpenURL(mAadhaarScheme);
+      if (canOpen) {
+        await Linking.openURL(mAadhaarScheme);
+      } else {
+        // App not installed - show options
+        Alert.alert(
+          'mAadhaar App',
+          'You can verify your Aadhaar using the official mAadhaar app or the UIDAI website.',
+          [
+            {
+              text: 'Open Website',
+              onPress: () => Linking.openURL(uidaiWebsite),
+            },
+            {
+              text: 'Download App',
+              onPress: () => Linking.openURL(Platform.OS === 'ios' ? appStoreLink : playStoreLink),
+            },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+          ]
+        );
+      }
+    } catch (error) {
+      // Fallback to website
+      Linking.openURL(uidaiWebsite);
+    }
+  };
+
   const renderEnterAadhaar = () => (
     <>
+      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={24} color={colors.gray[700]} />
+      </TouchableOpacity>
+
       <View style={styles.iconContainer}>
         <View style={styles.iconCircle}>
           <Ionicons name="shield-checkmark" size={48} color={colors.primary} />
@@ -303,7 +350,7 @@ export default function AadhaarVerificationScreen({
 
       <View style={styles.troubleContainer}>
         <Text style={styles.troubleText}>Didn't receive OTP?</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={handleOpenAadhaarApp}>
           <Text style={styles.troubleLink}>Verify using Aadhaar app</Text>
         </TouchableOpacity>
       </View>

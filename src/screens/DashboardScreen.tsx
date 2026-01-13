@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
-import { petsApi, bookingsApi, providersApi } from '../lib/api';
+import { bookingsApi, providersApi } from '../lib/api';
 
 interface UpcomingBooking {
   id: string;
@@ -61,15 +61,17 @@ export default function DashboardScreen() {
 
   const loadData = async () => {
     try {
-      const [petsData, bookingsData, vetsData, groomersData] = await Promise.all([
-        petsApi.getMyPets().catch(() => ({ pets: [] })),
+      // Get pets count from user data (saved during onboarding)
+      const petsCount = user?.pets?.length || 0;
+
+      const [bookingsData, vetsData, groomersData] = await Promise.all([
         bookingsApi.getMyBookings().catch(() => ({ bookings: [] })),
         providersApi.getVets().catch(() => ({ vets: [] })),
         providersApi.getGroomers().catch(() => ({ groomers: [] })),
       ]);
 
       setStats({
-        petsCount: (petsData.pets || petsData || []).length,
+        petsCount: petsCount,
         bookingsCount: (bookingsData.bookings || bookingsData || []).length,
         messagesCount: 3,
       });
@@ -228,7 +230,7 @@ export default function DashboardScreen() {
               <Text style={styles.greeting}>{getGreeting()},</Text>
               <Text style={styles.userName}>{user?.name?.split(' ')[0] || 'there'}</Text>
             </View>
-            <TouchableOpacity style={styles.notifBtn}>
+            <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
               <Ionicons name="notifications-outline" size={24} color={colors.gray[700]} />
               <View style={styles.notifDot} />
             </TouchableOpacity>
@@ -295,13 +297,13 @@ export default function DashboardScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             <View style={styles.providerActionsRow}>
-              <TouchableOpacity style={styles.providerActionItem}>
+              <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('AddProduct')}>
                 <View style={[styles.providerActionIcon, { backgroundColor: `${supplierColor}15` }]}>
                   <Ionicons name="add-circle" size={24} color={supplierColor} />
                 </View>
                 <Text style={styles.providerActionLabel}>Add Product</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.providerActionItem}>
+              <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Orders')}>
                 <View style={[styles.providerActionIcon, { backgroundColor: '#F59E0B15' }]}>
                   <Ionicons name="receipt" size={24} color="#F59E0B" />
                 </View>
@@ -309,13 +311,13 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
             <View style={styles.providerActionsRow}>
-              <TouchableOpacity style={styles.providerActionItem}>
+              <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Inventory')}>
                 <View style={[styles.providerActionIcon, { backgroundColor: '#8B5CF615' }]}>
                   <Ionicons name="cube" size={24} color="#8B5CF6" />
                 </View>
                 <Text style={styles.providerActionLabel}>Inventory</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.providerActionItem}>
+              <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Analytics')}>
                 <View style={[styles.providerActionIcon, { backgroundColor: '#10B98115' }]}>
                   <Ionicons name="bar-chart" size={24} color="#10B981" />
                 </View>
@@ -461,7 +463,7 @@ export default function DashboardScreen() {
               <Text style={styles.greeting}>{getGreeting()},</Text>
               <Text style={styles.userName}>{user?.name?.split(' ')[0] || 'there'}</Text>
             </View>
-            <TouchableOpacity style={styles.notifBtn}>
+            <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
               <Ionicons name="notifications-outline" size={24} color={colors.gray[700]} />
               <View style={styles.notifDot} />
             </TouchableOpacity>
@@ -479,7 +481,7 @@ export default function DashboardScreen() {
           <View style={styles.providerStats}>
             <View style={styles.providerStatCard}>
               <Text style={styles.providerStatValue}>4</Text>
-              <Text style={styles.providerStatLabel}>Today</Text>
+              <Text style={styles.providerStatLabel}>{userRole === 'LOVER' ? 'Jobs' : 'Bookings'}</Text>
             </View>
             <View style={styles.providerStatCard}>
               <Text style={styles.providerStatValue}>4.9</Text>
@@ -495,27 +497,36 @@ export default function DashboardScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             <View style={styles.providerActionsRow}>
-              <TouchableOpacity style={styles.providerActionItem}>
-                <View style={[styles.providerActionIcon, { backgroundColor: `${providerConfig.color}15` }]}>
-                  <Ionicons name={providerConfig.icon as any} size={24} color={providerConfig.color} />
-                </View>
-                <Text style={styles.providerActionLabel}>Manage {providerConfig.listingLabel}</Text>
-              </TouchableOpacity>
+              {userRole === 'LOVER' ? (
+                <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Listings')}>
+                  <View style={[styles.providerActionIcon, { backgroundColor: `${providerConfig.color}15` }]}>
+                    <Ionicons name="heart" size={24} color={providerConfig.color} />
+                  </View>
+                  <Text style={styles.providerActionLabel}>Find Pets</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Listings')}>
+                  <View style={[styles.providerActionIcon, { backgroundColor: `${providerConfig.color}15` }]}>
+                    <Ionicons name={providerConfig.icon as any} size={24} color={providerConfig.color} />
+                  </View>
+                  <Text style={styles.providerActionLabel}>Manage {providerConfig.listingLabel}</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Calendar')}>
                 <View style={[styles.providerActionIcon, { backgroundColor: '#F59E0B15' }]}>
                   <Ionicons name="calendar" size={24} color="#F59E0B" />
                 </View>
-                <Text style={styles.providerActionLabel}>Calendar</Text>
+                <Text style={styles.providerActionLabel}>{userRole === 'LOVER' ? 'My Schedule' : 'Calendar'}</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.providerActionsRow}>
-              <TouchableOpacity style={styles.providerActionItem}>
+              <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Analytics')}>
                 <View style={[styles.providerActionIcon, { backgroundColor: '#3B82F615' }]}>
                   <Ionicons name="analytics" size={24} color="#3B82F6" />
                 </View>
                 <Text style={styles.providerActionLabel}>Analytics</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.providerActionItem}>
+              <TouchableOpacity style={styles.providerActionItem} onPress={() => navigation.navigate('Earnings')}>
                 <View style={[styles.providerActionIcon, { backgroundColor: '#10B98115' }]}>
                   <Ionicons name="wallet" size={24} color="#10B981" />
                 </View>
@@ -527,38 +538,71 @@ export default function DashboardScreen() {
           {/* Today's Bookings */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Today's Bookings</Text>
+              <Text style={styles.sectionTitle}>{userRole === 'LOVER' ? "Today's Jobs" : "Today's Bookings"}</Text>
               <TouchableOpacity onPress={() => navigation.navigate('Calendar')}>
                 <Text style={[styles.seeAllText, { color: providerConfig.color }]}>See all</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.todayBookings}>
-              <TouchableOpacity style={styles.bookingCard}>
-                <View style={[styles.bookingIcon, { backgroundColor: `${providerConfig.color}15` }]}>
-                  <Ionicons name="person" size={22} color={providerConfig.color} />
-                </View>
-                <View style={styles.bookingInfo}>
-                  <Text style={styles.bookingTitle}>Rahul Kumar</Text>
-                  <Text style={styles.bookingSubtitle}>Consultation</Text>
-                </View>
-                <View style={styles.bookingTime}>
-                  <Text style={[styles.bookingDate, { color: providerConfig.color }]}>10:00 AM</Text>
-                  <Text style={styles.bookingTimeText}>30 min</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.bookingCard}>
-                <View style={[styles.bookingIcon, { backgroundColor: `${providerConfig.color}15` }]}>
-                  <Ionicons name="person" size={22} color={providerConfig.color} />
-                </View>
-                <View style={styles.bookingInfo}>
-                  <Text style={styles.bookingTitle}>Priya Sharma</Text>
-                  <Text style={styles.bookingSubtitle}>Follow-up</Text>
-                </View>
-                <View style={styles.bookingTime}>
-                  <Text style={[styles.bookingDate, { color: providerConfig.color }]}>2:30 PM</Text>
-                  <Text style={styles.bookingTimeText}>45 min</Text>
-                </View>
-              </TouchableOpacity>
+              {userRole === 'LOVER' ? (
+                <>
+                  <TouchableOpacity style={styles.bookingCard}>
+                    <View style={[styles.bookingIcon, { backgroundColor: `${providerConfig.color}15` }]}>
+                      <Ionicons name="walk" size={22} color={providerConfig.color} />
+                    </View>
+                    <View style={styles.bookingInfo}>
+                      <Text style={styles.bookingTitle}>Bruno (Golden Retriever)</Text>
+                      <Text style={styles.bookingSubtitle}>Dog Walking - Rahul Kumar</Text>
+                    </View>
+                    <View style={styles.bookingTime}>
+                      <Text style={[styles.bookingDate, { color: providerConfig.color }]}>10:00 AM</Text>
+                      <Text style={styles.bookingTimeText}>1 hour</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.bookingCard}>
+                    <View style={[styles.bookingIcon, { backgroundColor: '#8B5CF615' }]}>
+                      <Ionicons name="moon" size={22} color="#8B5CF6" />
+                    </View>
+                    <View style={styles.bookingInfo}>
+                      <Text style={styles.bookingTitle}>Whiskers (Persian Cat)</Text>
+                      <Text style={styles.bookingSubtitle}>Overnight Stay - Priya Sharma</Text>
+                    </View>
+                    <View style={styles.bookingTime}>
+                      <Text style={[styles.bookingDate, { color: '#8B5CF6' }]}>6:00 PM</Text>
+                      <Text style={styles.bookingTimeText}>Overnight</Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.bookingCard}>
+                    <View style={[styles.bookingIcon, { backgroundColor: `${providerConfig.color}15` }]}>
+                      <Ionicons name="person" size={22} color={providerConfig.color} />
+                    </View>
+                    <View style={styles.bookingInfo}>
+                      <Text style={styles.bookingTitle}>Rahul Kumar</Text>
+                      <Text style={styles.bookingSubtitle}>Consultation</Text>
+                    </View>
+                    <View style={styles.bookingTime}>
+                      <Text style={[styles.bookingDate, { color: providerConfig.color }]}>10:00 AM</Text>
+                      <Text style={styles.bookingTimeText}>30 min</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.bookingCard}>
+                    <View style={[styles.bookingIcon, { backgroundColor: `${providerConfig.color}15` }]}>
+                      <Ionicons name="person" size={22} color={providerConfig.color} />
+                    </View>
+                    <View style={styles.bookingInfo}>
+                      <Text style={styles.bookingTitle}>Priya Sharma</Text>
+                      <Text style={styles.bookingSubtitle}>Follow-up</Text>
+                    </View>
+                    <View style={styles.bookingTime}>
+                      <Text style={[styles.bookingDate, { color: providerConfig.color }]}>2:30 PM</Text>
+                      <Text style={styles.bookingTimeText}>45 min</Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           </View>
 
@@ -608,29 +652,43 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>{getGreeting()},</Text>
             <Text style={styles.userName}>{user?.name?.split(' ')[0] || 'there'}</Text>
           </View>
-          <TouchableOpacity style={styles.notifBtn}>
+          <TouchableOpacity style={styles.notifBtn} onPress={() => navigation.navigate('Notifications')}>
             <Ionicons name="notifications-outline" size={24} color={colors.gray[700]} />
             <View style={styles.notifDot} />
           </TouchableOpacity>
         </View>
 
+        {/* My Pets Widget */}
+        <TouchableOpacity
+          style={styles.myPetsWidget}
+          onPress={() => navigation.navigate('MyPets')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.myPetsLeft}>
+            <View style={styles.myPetsIconContainer}>
+              <Ionicons name="paw" size={28} color={colors.white} />
+            </View>
+            <View style={styles.myPetsInfo}>
+              <Text style={styles.myPetsCount}>{stats.petsCount}</Text>
+              <Text style={styles.myPetsLabel}>{stats.petsCount === 1 ? 'Pet' : 'Pets'}</Text>
+            </View>
+          </View>
+          <View style={styles.myPetsRight}>
+            <Text style={styles.myPetsAction}>View All</Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.white} />
+          </View>
+        </TouchableOpacity>
+
         {/* Quick Stats */}
         <View style={styles.quickStats}>
-          <TouchableOpacity style={styles.quickStatItem}>
-            <View style={[styles.quickStatIcon, { backgroundColor: `${colors.primary}15` }]}>
-              <Ionicons name="paw" size={20} color={colors.primary} />
-            </View>
-            <Text style={styles.quickStatValue}>{stats.petsCount}</Text>
-            <Text style={styles.quickStatLabel}>Pets</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickStatItem}>
+          <TouchableOpacity style={styles.quickStatItem} onPress={() => navigation.navigate('Appointments')}>
             <View style={[styles.quickStatIcon, { backgroundColor: '#3B82F615' }]}>
               <Ionicons name="calendar" size={20} color="#3B82F6" />
             </View>
             <Text style={styles.quickStatValue}>{stats.bookingsCount}</Text>
             <Text style={styles.quickStatLabel}>Bookings</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickStatItem}>
+          <TouchableOpacity style={styles.quickStatItem} onPress={() => navigation.navigate('Messages')}>
             <View style={[styles.quickStatIcon, { backgroundColor: '#8B5CF615' }]}>
               <Ionicons name="chatbubble" size={20} color="#8B5CF6" />
             </View>
@@ -643,13 +701,30 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Upcoming Appointments</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('Appointments')}>
               <Text style={styles.seeAllText}>See all</Text>
             </TouchableOpacity>
           </View>
           {upcomingBookings.length > 0 ? (
             upcomingBookings.map((booking) => (
-              <TouchableOpacity key={booking.id} style={styles.bookingCard}>
+              <TouchableOpacity
+                key={booking.id}
+                style={styles.bookingCard}
+                onPress={() => navigation.navigate('ProviderProfile', {
+                  provider: {
+                    id: booking.id,
+                    name: booking.providerName,
+                    type: booking.type,
+                    specialty: booking.service,
+                    rating: 4.8,
+                    reviewCount: 50,
+                    distance: '1.2 km',
+                    address: '123 Pet Care Lane, Sector 15, Gurgaon, Haryana 122001',
+                    phone: '+91 98765 43210',
+                    googleMapsLink: 'https://maps.google.com/?q=28.4595,77.0266',
+                  }
+                })}
+              >
                 <View style={[styles.bookingIcon, { backgroundColor: booking.type === 'vet' ? '#10B98115' : '#8B5CF615' }]}>
                   <Ionicons
                     name={booking.type === 'vet' ? 'medical' : 'cut'}
@@ -671,7 +746,7 @@ export default function DashboardScreen() {
             <View style={styles.emptyBookings}>
               <Ionicons name="calendar-outline" size={40} color={colors.gray[300]} />
               <Text style={styles.emptyText}>No upcoming appointments</Text>
-              <TouchableOpacity style={styles.bookNowBtn}>
+              <TouchableOpacity style={styles.bookNowBtn} onPress={() => navigation.navigate('Browse')}>
                 <Text style={styles.bookNowText}>Book Now</Text>
               </TouchableOpacity>
             </View>
@@ -682,25 +757,25 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.actionItem}>
+            <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('Browse', { filter: 'vet' })}>
               <View style={[styles.actionIcon, { backgroundColor: '#10B98115' }]}>
                 <Ionicons name="medical" size={24} color="#10B981" />
               </View>
               <Text style={styles.actionLabel}>Find Vet</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionItem}>
+            <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('Browse', { filter: 'groomer' })}>
               <View style={[styles.actionIcon, { backgroundColor: '#8B5CF615' }]}>
                 <Ionicons name="cut" size={24} color="#8B5CF6" />
               </View>
               <Text style={styles.actionLabel}>Grooming</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionItem}>
+            <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('Browse', { filter: 'supplier' })}>
               <View style={[styles.actionIcon, { backgroundColor: `${colors.primary}15` }]}>
                 <Ionicons name="storefront" size={24} color={colors.primary} />
               </View>
               <Text style={styles.actionLabel}>Shop</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionItem}>
+            <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('Calendar')}>
               <View style={[styles.actionIcon, { backgroundColor: '#F59E0B15' }]}>
                 <Ionicons name="calendar" size={24} color="#F59E0B" />
               </View>
@@ -713,12 +788,29 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Nearby Providers</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('Browse')}>
               <Text style={styles.seeAllText}>View map</Text>
             </TouchableOpacity>
           </View>
           {nearbyProviders.map((provider) => (
-            <TouchableOpacity key={provider.id} style={styles.providerCard}>
+            <TouchableOpacity
+              key={provider.id}
+              style={styles.providerCard}
+              onPress={() => navigation.navigate('ProviderProfile', {
+                provider: {
+                  id: provider.id,
+                  name: provider.name,
+                  type: provider.type === 'Veterinarian' ? 'vet' : provider.type === 'Pet Groomer' ? 'groomer' : 'supplier',
+                  specialty: provider.type,
+                  rating: provider.rating,
+                  reviewCount: 50,
+                  distance: provider.distance,
+                  address: '123 Pet Care Lane, Sector 15, Gurgaon, Haryana 122001',
+                  phone: '+91 98765 43210',
+                  googleMapsLink: 'https://maps.google.com/?q=28.4595,77.0266',
+                }
+              })}
+            >
               <View style={[styles.providerAvatar, { backgroundColor: `${getTypeColor(provider.type)}15` }]}>
                 <Ionicons name={getTypeIcon(provider.type) as any} size={22} color={getTypeColor(provider.type)} />
               </View>
@@ -741,17 +833,26 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Pet Care Tips</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tipsScroll}>
-            <TouchableOpacity style={[styles.tipCard, { backgroundColor: '#E0F2FE' }]}>
+            <TouchableOpacity
+              style={[styles.tipCard, { backgroundColor: '#E0F2FE' }]}
+              onPress={() => navigation.navigate('PetCareTip', { type: 'hydration' })}
+            >
               <Ionicons name="water" size={28} color="#0EA5E9" />
               <Text style={styles.tipTitle}>Hydration</Text>
               <Text style={styles.tipText}>Ensure fresh water is always available</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.tipCard, { backgroundColor: '#FEF3C7' }]}>
-              <Ionicons name="sunny" size={28} color="#F59E0B" />
+            <TouchableOpacity
+              style={[styles.tipCard, { backgroundColor: '#FEF3C7' }]}
+              onPress={() => navigation.navigate('PetCareTip', { type: 'exercise' })}
+            >
+              <Ionicons name="fitness" size={28} color="#F59E0B" />
               <Text style={styles.tipTitle}>Exercise</Text>
               <Text style={styles.tipText}>Daily walks keep your pet healthy</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.tipCard, { backgroundColor: '#DCFCE7' }]}>
+            <TouchableOpacity
+              style={[styles.tipCard, { backgroundColor: '#DCFCE7' }]}
+              onPress={() => navigation.navigate('PetCareTip', { type: 'nutrition' })}
+            >
               <Ionicons name="nutrition" size={28} color="#22C55E" />
               <Text style={styles.tipTitle}>Nutrition</Text>
               <Text style={styles.tipText}>Balanced diet for a happy pet</Text>
@@ -816,6 +917,55 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: colors.error,
+  },
+  myPetsWidget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.primary,
+    marginHorizontal: 20,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  myPetsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  myPetsIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  myPetsInfo: {
+    marginLeft: 16,
+  },
+  myPetsCount: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: colors.white,
+  },
+  myPetsLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  myPetsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  myPetsAction: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.white,
+    marginRight: 4,
   },
   quickStats: {
     flexDirection: 'row',

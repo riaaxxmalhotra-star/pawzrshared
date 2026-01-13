@@ -329,7 +329,7 @@ export default function ProviderListingsScreen() {
             </View>
             <Text style={styles.emptyTitle}>No {isSupplier ? 'products' : 'services'} yet</Text>
             <Text style={styles.emptySubtitle}>
-              Add your first {isSupplier ? 'product' : 'service'} to start receiving bookings
+              Add your first {isSupplier ? 'product to start receiving orders' : 'service to start receiving bookings'}
             </Text>
             <TouchableOpacity
               style={[styles.emptyButton, { backgroundColor: config.color }]}

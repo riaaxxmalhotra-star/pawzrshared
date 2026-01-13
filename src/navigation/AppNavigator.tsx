@@ -18,10 +18,25 @@ import ProfileScreen from '../screens/ProfileScreen';
 import ProviderListingsScreen from '../screens/ProviderListingsScreen';
 import CalendarScreen from '../screens/CalendarScreen';
 import AadhaarVerificationScreen from '../screens/AadhaarVerificationScreen';
+import RoleSelectionScreen from '../screens/RoleSelectionScreen';
+import OnboardingNavigator from '../screens/onboarding';
+import AnalyticsScreen from '../screens/AnalyticsScreen';
+import EarningsScreen from '../screens/EarningsScreen';
+import PetMatchScreen from '../screens/PetMatchScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
+import PetCareTipScreen from '../screens/PetCareTipScreen';
+import MyPetsScreen from '../screens/MyPetsScreen';
+import AddProductScreen from '../screens/AddProductScreen';
+import OrdersScreen from '../screens/OrdersScreen';
+import InventoryScreen from '../screens/InventoryScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
+import ProviderProfileScreen from '../screens/ProviderProfileScreen';
+import AppointmentsScreen from '../screens/AppointmentsScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
-  Onboarding: undefined;
+  RoleSelection: undefined;
+  Onboarding: { role: string };
   Main: undefined;
 };
 
@@ -33,6 +48,18 @@ export type HomeStackParamList = {
   Dashboard: undefined;
   Calendar: undefined;
   AadhaarVerification: undefined;
+  Analytics: undefined;
+  Earnings: undefined;
+  PetMatch: undefined;
+  EditProfile: undefined;
+  PetCareTip: { type: 'hydration' | 'exercise' | 'nutrition' };
+  MyPets: undefined;
+  AddProduct: undefined;
+  Orders: undefined;
+  Inventory: undefined;
+  Notifications: undefined;
+  ProviderProfile: { provider: any };
+  Appointments: undefined;
 };
 
 export type MainTabParamList = {
@@ -63,6 +90,18 @@ function HomeNavigator() {
       <HomeStack.Screen name="Dashboard" component={DashboardScreen} />
       <HomeStack.Screen name="Calendar" component={CalendarScreen} />
       <HomeStack.Screen name="AadhaarVerification" component={AadhaarVerificationScreen} />
+      <HomeStack.Screen name="Analytics" component={AnalyticsScreen} />
+      <HomeStack.Screen name="Earnings" component={EarningsScreen} />
+      <HomeStack.Screen name="PetMatch" component={PetMatchScreen} />
+      <HomeStack.Screen name="EditProfile" component={EditProfileScreen} />
+      <HomeStack.Screen name="PetCareTip" component={PetCareTipScreen} />
+      <HomeStack.Screen name="MyPets" component={MyPetsScreen} />
+      <HomeStack.Screen name="AddProduct" component={AddProductScreen} />
+      <HomeStack.Screen name="Orders" component={OrdersScreen} />
+      <HomeStack.Screen name="Inventory" component={InventoryScreen} />
+      <HomeStack.Screen name="Notifications" component={NotificationsScreen} />
+      <HomeStack.Screen name="ProviderProfile" component={ProviderProfileScreen} />
+      <HomeStack.Screen name="Appointments" component={AppointmentsScreen} />
     </HomeStack.Navigator>
   );
 }
@@ -174,14 +213,25 @@ function MainNavigator() {
         options={{ tabBarLabel: 'Explore' }}
       />
       {isProvider ? (
-        <MainTab.Screen
-          name="Listings"
-          component={ProviderListingsScreen}
-          options={{
-            tabBarLabel: userRole === 'SUPPLIER' ? 'Shop' : 'Services',
-            tabBarActiveTintColor: providerConfig.color,
-          }}
-        />
+        userRole === 'LOVER' ? (
+          <MainTab.Screen
+            name="Listings"
+            component={PetMatchScreen}
+            options={{
+              tabBarLabel: 'Match',
+              tabBarActiveTintColor: providerConfig.color,
+            }}
+          />
+        ) : (
+          <MainTab.Screen
+            name="Listings"
+            component={ProviderListingsScreen}
+            options={{
+              tabBarLabel: userRole === 'SUPPLIER' ? 'Shop' : 'Services',
+              tabBarActiveTintColor: providerConfig.color,
+            }}
+          />
+        )
       ) : (
         <MainTab.Screen
           name="Pets"
@@ -220,13 +270,22 @@ export default function AppNavigator() {
     return <LoadingScreen />;
   }
 
+  // Determine which screen to show based on user state
+  const needsRoleSelection = user && !user.onboardingComplete;
+
   return (
     <NavigationContainer>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          <RootStack.Screen name="Main" component={MainNavigator} />
-        ) : (
+        {!user ? (
           <RootStack.Screen name="Auth" component={AuthNavigator} />
+        ) : needsRoleSelection ? (
+          <>
+            <RootStack.Screen name="RoleSelection" component={RoleSelectionScreen} />
+            <RootStack.Screen name="Onboarding" component={OnboardingNavigator} />
+            <RootStack.Screen name="Main" component={MainNavigator} />
+          </>
+        ) : (
+          <RootStack.Screen name="Main" component={MainNavigator} />
         )}
       </RootStack.Navigator>
     </NavigationContainer>

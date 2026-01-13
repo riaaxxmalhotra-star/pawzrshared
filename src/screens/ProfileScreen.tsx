@@ -9,13 +9,15 @@ import {
   Switch,
   RefreshControl,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
-import { profileApi, petsApi, bookingsApi } from '../lib/api';
+import { bookingsApi } from '../lib/api';
 
 const getRoleConfig = (role: string) => {
   switch (role) {
@@ -40,7 +42,7 @@ interface ProfileStats {
 }
 
 export default function ProfileScreen() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, updateUserProfile } = useAuth();
   const navigation = useNavigation<any>();
   const userRole = (user?.role || 'OWNER').toUpperCase();
   // Provider roles that show earnings
@@ -63,13 +65,13 @@ export default function ProfileScreen() {
 
   const loadStats = async () => {
     try {
-      const [petsData, bookingsData] = await Promise.all([
-        petsApi.getMyPets().catch(() => ({ pets: [] })),
-        bookingsApi.getMyBookings().catch(() => ({ bookings: [] })),
-      ]);
+      // Use pets from user data (saved during onboarding)
+      const petsCount = user?.pets?.length || 0;
+
+      const bookingsData = await bookingsApi.getMyBookings().catch(() => ({ bookings: [] }));
 
       setStats({
-        petsCount: (petsData.pets || petsData || []).length,
+        petsCount: petsCount,
         bookingsCount: (bookingsData.bookings || bookingsData || []).length,
         ordersCount: 0, // Would come from orders API
         rating: isOwner ? 0 : (user?.rating || 4.9), // Only providers have ratings
@@ -86,6 +88,26 @@ export default function ProfileScreen() {
     loadStats();
   };
 
+  const handleChangePhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Please allow access to your photo library to change profile photo');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      await updateUserProfile({ image: result.assets[0].uri });
+      Alert.alert('Success', 'Profile photo updated!');
+    }
+  };
+
   const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
@@ -99,6 +121,9 @@ export default function ProfileScreen() {
 
   const handleMenuPress = (label: string) => {
     switch (label) {
+      case 'Edit Profile':
+        navigation.navigate('Home', { screen: 'EditProfile' });
+        break;
       case 'Verification':
         navigation.navigate('Home', { screen: 'AadhaarVerification' });
         break;
@@ -159,12 +184,16 @@ export default function ProfileScreen() {
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {user?.name?.charAt(0).toUpperCase() || 'U'}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.editAvatarButton}>
+            {user?.image ? (
+              <Image source={{ uri: user.image }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity style={styles.editAvatarButton} onPress={handleChangePhoto}>
               <Ionicons name="camera" size={16} color={colors.white} />
             </TouchableOpacity>
           </View>
@@ -318,6 +347,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,

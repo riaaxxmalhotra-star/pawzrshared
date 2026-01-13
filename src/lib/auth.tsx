@@ -6,12 +6,55 @@ import { authApi } from './api';
 
 WebBrowser.maybeCompleteAuthSession();
 
+interface Pet {
+  id: string;
+  name: string;
+  species: string;
+  breed: string;
+  age: string;
+  birthday?: string;
+  gender: string;
+  vaccinated: boolean;
+  photos: string[];
+}
+
 interface User {
   id: string;
   email: string;
   name: string;
   role: string;
   image?: string;
+  phone?: string;
+  address?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  landmark?: string;
+  pincode?: string;
+  city?: string;
+  state?: string;
+  bio?: string;
+  dob?: string;
+  photos?: string[];
+  location?: { lat: number; lng: number };
+  onboardingComplete?: boolean;
+  aadhaarVerified?: boolean;
+  pets?: Pet[];
+  // Pet lover preferences
+  preferredPets?: string[];
+  services?: string[];
+  availability?: string[];
+  experience?: string;
+  // Supplier fields
+  businessName?: string;
+  gstNumber?: string;
+  googleMapsLink?: string;
+  categories?: string[];
+  deliveryAvailable?: boolean;
+  deliveryRadius?: string;
+  minOrder?: string;
+  products?: any[];
+  orders?: any[];
+  inventory?: any[];
 }
 
 interface AuthContextType {
@@ -20,6 +63,8 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   updateUserRole: (role: string) => Promise<void>;
+  completeOnboarding: () => Promise<void>;
+  updateUserProfile: (updates: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -73,18 +118,114 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('No access token');
       }
 
-      const result = await authApi.googleToken(
-        authentication.idToken || '',
-        authentication.accessToken
-      );
-
-      console.log('API response:', JSON.stringify(result, null, 2));
-
-      if (result.user) {
-        setUser(result.user);
-        await AsyncStorage.setItem('user', JSON.stringify(result.user));
-        await AsyncStorage.setItem('token', result.token || '');
+      // First, try to get user info from Google directly
+      let googleUser = null;
+      try {
+        const googleResponse = await fetch('https://www.googleapis.com/userinfo/v2/me', {
+          headers: { Authorization: `Bearer ${authentication.accessToken}` },
+        });
+        if (googleResponse.ok) {
+          googleUser = await googleResponse.json();
+          console.log('Google user info:', JSON.stringify(googleUser, null, 2));
+        }
+      } catch (googleError) {
+        console.error('Failed to fetch Google user info:', googleError);
       }
+
+      // Try to sync with backend API
+      let apiUser = null;
+      try {
+        const result = await authApi.googleToken(
+          authentication.idToken || '',
+          authentication.accessToken
+        );
+        console.log('API response:', JSON.stringify(result, null, 2));
+
+        if (result.user) {
+          apiUser = result.user;
+          await AsyncStorage.setItem('token', result.token || '');
+        }
+      } catch (apiError: any) {
+        console.log('Backend API unavailable, using local auth:', apiError.message);
+      }
+
+      // Determine final user - always check persistent storage first
+      let finalUser: User;
+
+      // Get email from either source
+      const userEmail = apiUser?.email || googleUser?.email;
+
+      if (!userEmail) {
+        throw new Error('Failed to get user email');
+      }
+
+      // ALWAYS check persistent profile storage first (survives logout/login)
+      const savedProfileData = await AsyncStorage.getItem(`userProfile_${userEmail}`);
+
+      if (savedProfileData) {
+        // Found saved profile - this user has logged in before
+        const savedProfile = JSON.parse(savedProfileData);
+        console.log('Restoring saved profile for:', userEmail);
+        console.log('Saved profile data:', JSON.stringify(savedProfile, null, 2));
+
+        // Merge: saved profile is base, update with fresh auth data (but preserve onboarding fields)
+        finalUser = {
+          ...savedProfile,
+          // Update with fresh data from auth source
+          id: apiUser?.id || googleUser?.id || savedProfile.id,
+          name: apiUser?.name || googleUser?.name || savedProfile.name,
+          image: apiUser?.image || googleUser?.picture || savedProfile.image,
+          // ALWAYS preserve these from saved profile
+          role: savedProfile.role,
+          onboardingComplete: savedProfile.onboardingComplete,
+          phone: savedProfile.phone,
+          address: savedProfile.address,
+          addressLine1: savedProfile.addressLine1,
+          addressLine2: savedProfile.addressLine2,
+          landmark: savedProfile.landmark,
+          pincode: savedProfile.pincode,
+          city: savedProfile.city,
+          state: savedProfile.state,
+          bio: savedProfile.bio,
+          dob: savedProfile.dob,
+          photos: savedProfile.photos,
+          location: savedProfile.location,
+          aadhaarVerified: savedProfile.aadhaarVerified,
+          pets: savedProfile.pets,
+          preferredPets: savedProfile.preferredPets,
+          services: savedProfile.services,
+          availability: savedProfile.availability,
+          experience: savedProfile.experience,
+          businessName: savedProfile.businessName,
+          gstNumber: savedProfile.gstNumber,
+          googleMapsLink: savedProfile.googleMapsLink,
+          categories: savedProfile.categories,
+          deliveryAvailable: savedProfile.deliveryAvailable,
+          deliveryRadius: savedProfile.deliveryRadius,
+          minOrder: savedProfile.minOrder,
+        };
+      } else if (apiUser) {
+        // No saved profile, use API user
+        finalUser = apiUser;
+      } else if (googleUser) {
+        // No saved profile, no API user - create new from Google
+        finalUser = {
+          id: googleUser.id,
+          email: googleUser.email,
+          name: googleUser.name || '',
+          role: 'OWNER',
+          image: googleUser.picture,
+          onboardingComplete: false,
+        };
+      } else {
+        throw new Error('Failed to get user information');
+      }
+
+      console.log('Final user:', JSON.stringify(finalUser, null, 2));
+      setUser(finalUser);
+      await AsyncStorage.setItem('user', JSON.stringify(finalUser));
+      // Also save to persistent profile storage (survives logout)
+      await AsyncStorage.setItem(`userProfile_${finalUser.email}`, JSON.stringify(finalUser));
     } catch (error: any) {
       console.error('Google sign in error:', error.message || error);
       throw error;
@@ -105,6 +246,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signOut() {
     try {
       setIsLoading(true);
+      // Save user profile by email before clearing session (so it can be restored on re-login)
+      if (user?.email) {
+        await AsyncStorage.setItem(`userProfile_${user.email}`, JSON.stringify(user));
+      }
       await AsyncStorage.removeItem('user');
       await AsyncStorage.removeItem('token');
       setUser(null);
@@ -120,6 +265,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const updatedUser = { ...user, role };
       setUser(updatedUser);
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      // Also save to persistent profile storage by email
+      if (updatedUser.email) {
+        await AsyncStorage.setItem(`userProfile_${updatedUser.email}`, JSON.stringify(updatedUser));
+      }
+    }
+  }
+
+  async function completeOnboarding() {
+    if (user) {
+      const updatedUser = { ...user, onboardingComplete: true };
+      setUser(updatedUser);
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      // Also save to persistent profile storage by email
+      if (updatedUser.email) {
+        await AsyncStorage.setItem(`userProfile_${updatedUser.email}`, JSON.stringify(updatedUser));
+      }
+    }
+  }
+
+  async function updateUserProfile(updates: Partial<User>) {
+    if (user) {
+      const updatedUser = { ...user, ...updates };
+      setUser(updatedUser);
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      // Also save to persistent profile storage by email (survives logout)
+      if (updatedUser.email) {
+        await AsyncStorage.setItem(`userProfile_${updatedUser.email}`, JSON.stringify(updatedUser));
+      }
     }
   }
 
@@ -131,6 +304,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGoogle,
         signOut,
         updateUserRole,
+        completeOnboarding,
+        updateUserProfile,
       }}
     >
       {children}

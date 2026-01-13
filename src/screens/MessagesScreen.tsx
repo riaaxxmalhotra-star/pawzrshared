@@ -10,11 +10,13 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { messagesApi } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 interface Conversation {
   id: string;
@@ -36,7 +38,38 @@ interface Message {
   createdAt?: string;
 }
 
+interface Provider {
+  id: string;
+  name: string;
+  type: 'vet' | 'groomer' | 'supplier' | 'lover' | 'owner';
+  specialty?: string;
+  rating: number;
+  online: boolean;
+}
+
+// Mock providers for starting new conversations
+const mockProviders: Provider[] = [
+  { id: 'v1', name: 'Dr. Sarah Sharma', type: 'vet', specialty: 'General Medicine', rating: 4.9, online: true },
+  { id: 'v2', name: 'Dr. Amit Kumar', type: 'vet', specialty: 'Surgery', rating: 4.8, online: false },
+  { id: 'g1', name: 'PetSpa Studio', type: 'groomer', specialty: 'Full Grooming', rating: 4.7, online: true },
+  { id: 'g2', name: 'Fluffy Tails', type: 'groomer', specialty: 'Dog Grooming', rating: 4.6, online: false },
+  { id: 's1', name: 'Pet Paradise Store', type: 'supplier', specialty: 'Pet Food & Accessories', rating: 4.8, online: true },
+  { id: 's2', name: 'Happy Paws Shop', type: 'supplier', specialty: 'Premium Pet Products', rating: 4.5, online: false },
+  { id: 'l1', name: 'Priya Mehta', type: 'lover', specialty: 'Dog Walking & Pet Sitting', rating: 4.9, online: true },
+  { id: 'l2', name: 'Rahul Singh', type: 'lover', specialty: 'Cat Care Specialist', rating: 4.7, online: false },
+];
+
+// Mock pet owners for providers to chat with
+const mockPetOwners: Provider[] = [
+  { id: 'o1', name: 'Anita Desai', type: 'owner', specialty: '2 Dogs, 1 Cat', rating: 5.0, online: true },
+  { id: 'o2', name: 'Vikram Patel', type: 'owner', specialty: 'Golden Retriever', rating: 5.0, online: false },
+  { id: 'o3', name: 'Meera Sharma', type: 'owner', specialty: '3 Cats', rating: 5.0, online: true },
+];
+
 export default function MessagesScreen() {
+  const { user } = useAuth();
+  const userRole = (user?.role || 'OWNER').toUpperCase();
+  const isOwner = !['VET', 'GROOMER', 'SUPPLIER', 'LOVER'].includes(userRole);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
@@ -45,7 +78,65 @@ export default function MessagesScreen() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [providerFilter, setProviderFilter] = useState<'all' | 'vet' | 'groomer' | 'supplier' | 'lover' | 'owner'>('all');
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Get contacts based on user role
+  const getContactsList = () => {
+    if (isOwner) {
+      // Pet owners can chat with vets, groomers, suppliers, and pet lovers
+      if (providerFilter === 'all') return mockProviders;
+      return mockProviders.filter(p => p.type === providerFilter);
+    } else {
+      // Providers can chat with pet owners and other providers
+      if (providerFilter === 'all') return [...mockPetOwners, ...mockProviders.filter(p => p.type !== userRole.toLowerCase())];
+      if (providerFilter === 'owner') return mockPetOwners;
+      return mockProviders.filter(p => p.type === providerFilter);
+    }
+  };
+
+  const filteredProviders = getContactsList();
+
+  const getProviderIcon = (type: string) => {
+    switch (type) {
+      case 'vet': return 'medical';
+      case 'groomer': return 'cut';
+      case 'supplier': return 'storefront';
+      case 'lover': return 'heart';
+      case 'owner': return 'paw';
+      default: return 'person';
+    }
+  };
+
+  const getProviderColor = (type: string) => {
+    switch (type) {
+      case 'vet': return '#10B981';
+      case 'groomer': return '#8B5CF6';
+      case 'supplier': return '#3B82F6';
+      case 'lover': return '#EC4899';
+      case 'owner': return '#F59E0B';
+      default: return colors.primary;
+    }
+  };
+
+  const startConversation = (provider: Provider) => {
+    // Create a new conversation with the provider
+    const newConversation: Conversation = {
+      id: `conv_${provider.id}_${Date.now()}`,
+      name: provider.name,
+      lastMessage: '',
+      time: 'Just now',
+      unread: 0,
+      avatar: getAvatarEmoji(provider.type),
+      online: provider.online,
+      recipientId: provider.id,
+    };
+
+    setConversations([newConversation, ...conversations]);
+    setSelectedConversation(newConversation);
+    setShowNewChatModal(false);
+  };
 
   useEffect(() => {
     loadConversations();
@@ -281,7 +372,7 @@ export default function MessagesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Messages</Text>
-        <TouchableOpacity style={styles.newChatButton}>
+        <TouchableOpacity style={styles.newChatButton} onPress={() => setShowNewChatModal(true)}>
           <Ionicons name="create-outline" size={22} color={colors.gray[700]} />
         </TouchableOpacity>
       </View>
@@ -346,6 +437,104 @@ export default function MessagesScreen() {
         ))
         )}
       </ScrollView>
+
+      {/* New Chat Modal */}
+      <Modal visible={showNewChatModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Start a Chat</Text>
+              <TouchableOpacity onPress={() => setShowNewChatModal(false)}>
+                <Ionicons name="close" size={24} color={colors.gray[700]} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              {isOwner
+                ? 'Chat with vets, groomers, suppliers, and pet lovers'
+                : 'Chat with pet owners and other service providers'}
+            </Text>
+
+            {/* Provider Type Filter */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+              {(isOwner ? [
+                { key: 'all', label: 'All', icon: 'apps' },
+                { key: 'vet', label: 'Vets', icon: 'medical' },
+                { key: 'groomer', label: 'Groomers', icon: 'cut' },
+                { key: 'supplier', label: 'Suppliers', icon: 'storefront' },
+                { key: 'lover', label: 'Pet Lovers', icon: 'heart' },
+              ] : [
+                { key: 'all', label: 'All', icon: 'apps' },
+                { key: 'owner', label: 'Pet Owners', icon: 'paw' },
+                { key: 'vet', label: 'Vets', icon: 'medical' },
+                { key: 'groomer', label: 'Groomers', icon: 'cut' },
+                { key: 'supplier', label: 'Suppliers', icon: 'storefront' },
+              ]).map((item) => (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[
+                    styles.filterChip,
+                    providerFilter === item.key && styles.filterChipActive,
+                  ]}
+                  onPress={() => setProviderFilter(item.key as any)}
+                >
+                  <Ionicons
+                    name={item.icon as any}
+                    size={16}
+                    color={providerFilter === item.key ? colors.white : colors.gray[600]}
+                  />
+                  <Text style={[
+                    styles.filterChipText,
+                    providerFilter === item.key && styles.filterChipTextActive,
+                  ]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Providers List */}
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.providersList}>
+              {filteredProviders.map((provider) => (
+                <TouchableOpacity
+                  key={provider.id}
+                  style={styles.providerCard}
+                  onPress={() => startConversation(provider)}
+                >
+                  <View style={[
+                    styles.providerIcon,
+                    { backgroundColor: `${getProviderColor(provider.type)}15` }
+                  ]}>
+                    <Ionicons
+                      name={getProviderIcon(provider.type) as any}
+                      size={22}
+                      color={getProviderColor(provider.type)}
+                    />
+                    {provider.online && <View style={styles.providerOnlineDot} />}
+                  </View>
+                  <View style={styles.providerInfo}>
+                    <Text style={styles.providerName}>{provider.name}</Text>
+                    <Text style={styles.providerSpecialty}>{provider.specialty}</Text>
+                    <View style={styles.providerMeta}>
+                      <Ionicons name="star" size={12} color="#F59E0B" />
+                      <Text style={styles.providerRating}>{provider.rating}</Text>
+                      <Text style={styles.providerStatus}>
+                        {provider.online ? '• Online' : '• Offline'}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.chatBtn, { backgroundColor: getProviderColor(provider.type) }]}
+                    onPress={() => startConversation(provider)}
+                  >
+                    <Ionicons name="chatbubble" size={18} color={colors.white} />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -676,5 +865,126 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: colors.gray[300],
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.gray[900],
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginBottom: 20,
+  },
+  filterScroll: {
+    marginBottom: 16,
+    marginHorizontal: -24,
+    paddingHorizontal: 24,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: colors.gray[100],
+    marginRight: 8,
+    gap: 6,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.gray[600],
+  },
+  filterChipTextActive: {
+    color: colors.white,
+  },
+  providersList: {
+    maxHeight: 400,
+  },
+  providerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.gray[50],
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+  },
+  providerIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  providerOnlineDot: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+    borderWidth: 2,
+    borderColor: colors.white,
+  },
+  providerInfo: {
+    flex: 1,
+  },
+  providerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.gray[900],
+  },
+  providerSpecialty: {
+    fontSize: 13,
+    color: colors.gray[500],
+    marginTop: 2,
+  },
+  providerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 4,
+  },
+  providerRating: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.gray[700],
+  },
+  providerStatus: {
+    fontSize: 12,
+    color: colors.gray[500],
+    marginLeft: 4,
+  },
+  chatBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
