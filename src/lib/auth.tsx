@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Google Auth - using Expo proxy for Expo Go compatibility
   const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: GOOGLE_WEB_CLIENT_ID,
+    clientId: GOOGLE_WEB_CLIENT_ID,
     iosClientId: GOOGLE_IOS_CLIENT_ID,
     webClientId: GOOGLE_WEB_CLIENT_ID,
   });
