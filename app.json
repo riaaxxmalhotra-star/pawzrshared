@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Pawzr",
+    "name": "pawzr2",
     "slug": "pawzr",
     "owner": "riaaxxmalhotra",
     "version": "1.0.0",
@@ -19,21 +19,6 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
-            ]
-          },
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
-            ]
-          },
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
-            ]
-          },
           {
             "CFBundleURLSchemes": [
               "com.googleusercontent.apps.1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1"
@@ -65,6 +50,10 @@
     },
     "updates": {
       "url": "https://u.expo.dev/380a56f3-19c6-4d20-acca-42b5a7e3a349"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "@react-native-community/datetimepicker"
+    ]
   }
 }
