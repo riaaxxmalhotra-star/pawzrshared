@@ -36,13 +36,6 @@ export default function DashboardScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.logo}>pawzr</Text>
-            </View>
-          </View>
-
           {/* Welcome Card */}
           <View style={styles.welcomeCard}>
             <View style={styles.welcomeContent}>
@@ -64,7 +57,7 @@ export default function DashboardScreen() {
           {/* Start Matching CTA */}
           <TouchableOpacity
             style={styles.ctaCard}
-            onPress={() => navigation.navigate('Match')}
+            onPress={() => navigation.getParent()?.navigate('Swipe')}
             activeOpacity={0.9}
           >
             <View style={styles.ctaIconContainer}>
@@ -141,13 +134,6 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logo}>pawzr</Text>
-          </View>
-        </View>
-
         {/* Welcome Card */}
         <View style={styles.welcomeCard}>
           <View style={styles.welcomeContent}>
@@ -169,7 +155,7 @@ export default function DashboardScreen() {
         {/* My Pets Card */}
         <TouchableOpacity
           style={styles.petsCard}
-          onPress={() => navigation.navigate('Pets')}
+          onPress={() => navigation.navigate('MyPets')}
           activeOpacity={0.9}
         >
           <View style={styles.petsCardHeader}>
@@ -192,7 +178,7 @@ export default function DashboardScreen() {
           <View style={styles.actionsGrid}>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => navigation.navigate('Browse')}
+              onPress={() => navigation.getParent()?.navigate('Swipe')}
             >
               <View style={[styles.actionIcon, { backgroundColor: '#EC489915' }]}>
                 <Ionicons name="heart" size={26} color="#EC4899" />

@@ -18,6 +18,13 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
 import { colors } from '../../theme/colors';
+import PromptSelector from '../../components/PromptSelector';
+
+interface SelectedPrompt {
+  promptId: string;
+  prompt: string;
+  answer: string;
+}
 
 interface PetInfo {
   name: string;
@@ -37,9 +44,13 @@ export default function PetOwnerOnboardingScreen() {
   const [isLoading, setIsLoading] = useState(false);
 
   // Profile info - pre-fill from user data
-  const [profilePhoto, setProfilePhoto] = useState<string | null>(user?.image || null);
+  const [photos, setPhotos] = useState<string[]>([]);
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
+
+  // Prompts
+  const [selectedPrompts, setSelectedPrompts] = useState<SelectedPrompt[]>([]);
+  const [practicalAnswers, setPracticalAnswers] = useState<{ [key: string]: string }>({});
   const [addressLine1, setAddressLine1] = useState(user?.addressLine1 || '');
   const [addressLine2, setAddressLine2] = useState(user?.addressLine2 || '');
   const [landmark, setLandmark] = useState(user?.landmark || '');
@@ -86,7 +97,12 @@ export default function PetOwnerOnboardingScreen() {
     setPets(updated);
   };
 
-  const handlePickProfilePhoto = async () => {
+  const handleAddPhoto = async () => {
+    if (photos.length >= 6) {
+      Alert.alert('Limit Reached', 'You can only add up to 6 photos');
+      return;
+    }
+
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission Required', 'Please allow access to your photo library');
@@ -101,8 +117,12 @@ export default function PetOwnerOnboardingScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      setProfilePhoto(result.assets[0].uri);
+      setPhotos([...photos, result.assets[0].uri]);
     }
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setPhotos(photos.filter((_, i) => i !== index));
   };
 
   const handleAddPetPhoto = async (petIndex: number) => {
@@ -148,7 +168,8 @@ export default function PetOwnerOnboardingScreen() {
 
       await updateUserProfile({
         name,
-        image: profilePhoto || undefined,
+        image: photos[0] || undefined,
+        photos: photos,
         phone,
         addressLine1,
         addressLine2,
@@ -157,6 +178,8 @@ export default function PetOwnerOnboardingScreen() {
         city,
         state,
         pets: petsWithIds,
+        prompts: selectedPrompts,
+        practicalAnswers: practicalAnswers,
         onboardingComplete: true,
       });
 
@@ -176,19 +199,32 @@ export default function PetOwnerOnboardingScreen() {
   const renderStep1 = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
       <Text style={styles.stepTitle}>Your Profile</Text>
-      <Text style={styles.stepSubtitle}>Tell us about yourself</Text>
+      <Text style={styles.stepSubtitle}>Add up to 6 photos to show yourself</Text>
 
-      {/* Profile Photo */}
-      <TouchableOpacity style={styles.photoUpload} onPress={handlePickProfilePhoto}>
-        {profilePhoto ? (
-          <Image source={{ uri: profilePhoto }} style={styles.profilePhoto} />
-        ) : (
-          <View style={styles.photoPlaceholder}>
-            <Ionicons name="camera" size={32} color={colors.gray[400]} />
-            <Text style={styles.photoPlaceholderText}>Add Photo</Text>
-          </View>
-        )}
-      </TouchableOpacity>
+      {/* Photos Grid - like Bumble */}
+      <View style={styles.photosGrid}>
+        {[...Array(6)].map((_, index) => (
+          <TouchableOpacity
+            key={index}
+            style={[styles.photoSlot, index === 0 && styles.mainPhotoSlot]}
+            onPress={() => photos[index] ? handleRemovePhoto(index) : handleAddPhoto()}
+          >
+            {photos[index] ? (
+              <View style={styles.photoContainer}>
+                <Image source={{ uri: photos[index] }} style={styles.photo} />
+                <View style={styles.removePhotoButton}>
+                  <Ionicons name="close-circle" size={24} color={colors.error} />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.photoPlaceholder}>
+                <Ionicons name="add" size={index === 0 ? 32 : 24} color={colors.gray[400]} />
+                {index === 0 && <Text style={styles.mainPhotoText}>Main Photo</Text>}
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {/* Name */}
       <View style={styles.inputGroup}>
@@ -455,6 +491,21 @@ export default function PetOwnerOnboardingScreen() {
   );
 
   const renderStep3 = () => (
+    <ScrollView showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepTitle}>Add Personality</Text>
+      <Text style={styles.stepSubtitle}>Let pet lovers know more about you</Text>
+
+      <PromptSelector
+        role="OWNER"
+        selectedPrompts={selectedPrompts}
+        practicalAnswers={practicalAnswers}
+        onPromptsChange={setSelectedPrompts}
+        onPracticalAnswersChange={setPracticalAnswers}
+      />
+    </ScrollView>
+  );
+
+  const renderStep4 = () => (
     <View style={styles.verificationContainer}>
       <View style={styles.verificationIcon}>
         <Ionicons name="shield-checkmark" size={60} color={colors.primary} />
@@ -488,9 +539,9 @@ export default function PetOwnerOnboardingScreen() {
         {/* Progress */}
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${(step / 3) * 100}%` }]} />
+            <View style={[styles.progressFill, { width: `${(step / 4) * 100}%` }]} />
           </View>
-          <Text style={styles.progressText}>Step {step} of 3</Text>
+          <Text style={styles.progressText}>Step {step} of 4</Text>
         </View>
 
         {/* Content */}
@@ -498,10 +549,11 @@ export default function PetOwnerOnboardingScreen() {
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
         </View>
 
         {/* Footer */}
-        {step < 3 && (
+        {step < 4 && (
           <View style={styles.footer}>
             {step > 1 && (
               <TouchableOpacity
@@ -573,28 +625,49 @@ const styles = StyleSheet.create({
     color: colors.gray[500],
     marginBottom: 24,
   },
-  photoUpload: {
-    alignSelf: 'center',
+  photosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
     marginBottom: 24,
   },
-  profilePhoto: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  photoPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  photoSlot: {
+    width: '31%',
+    aspectRatio: 1,
+    borderRadius: 12,
     backgroundColor: colors.gray[100],
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: colors.gray[200],
     borderStyle: 'dashed',
+    overflow: 'hidden',
   },
-  photoPlaceholderText: {
-    fontSize: 12,
+  mainPhotoSlot: {
+    width: '48%',
+    aspectRatio: 0.8,
+  },
+  photo: {
+    width: '100%',
+    height: '100%',
+  },
+  photoContainer: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: colors.white,
+    borderRadius: 12,
+  },
+  photoPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mainPhotoText: {
+    fontSize: 11,
     color: colors.gray[400],
     marginTop: 4,
   },
@@ -690,11 +763,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.gray[700],
   },
-  photosGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
   petPhotoSlot: {
     width: 80,
     height: 80,
@@ -710,18 +778,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 12,
-  },
-  photoContainer: {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-  },
-  removePhotoButton: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: colors.white,
-    borderRadius: 10,
   },
   addPetButton: {
     flexDirection: 'row',

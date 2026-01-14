@@ -10,7 +10,7 @@ import {
   Image,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -21,148 +21,118 @@ const CARD_WIDTH = width - 24;
 const CARD_HEIGHT = height * 0.72;
 const SWIPE_THRESHOLD = 120;
 
-interface Pet {
+interface PetLover {
   id: string;
   name: string;
-  breed: string;
-  age: string;
-  gender: string;
+  age: number;
   photos: string[];
-  owner: {
-    name: string;
-    location: string;
-    distance: string;
-    verified: boolean;
-  };
-  traits: string[];
+  distance: string;
+  rating: number;
+  reviews: number;
+  verified: boolean;
+  bio: string;
   services: string[];
-  about: string;
+  experience: string;
+  prompts?: { prompt: string; answer: string }[];
 }
 
-// Mock pets data with up to 6 photos each
-const mockPets: Pet[] = [
+// Mock pet lovers data
+const mockLovers: PetLover[] = [
   {
     id: '1',
-    name: 'Bruno',
-    breed: 'Golden Retriever',
-    age: '3 years',
-    gender: 'Male',
+    name: 'Priya',
+    age: 25,
     photos: [
-      'https://images.unsplash.com/photo-1552053831-71594a27632d?w=400',
-      'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400',
-      'https://images.unsplash.com/photo-1561037404-61cd46aa615b?w=400',
-      'https://images.unsplash.com/photo-1558788353-f76d92427f16?w=400',
-      'https://images.unsplash.com/photo-1596492784531-6e6eb5ea9993?w=400',
-      'https://images.unsplash.com/photo-1601979031925-424e53b6caaa?w=400',
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400',
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+      'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400',
+      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400',
     ],
-    owner: {
-      name: 'Rahul Kumar',
-      location: 'Koramangala, Bangalore',
-      distance: '1.2 km',
-      verified: true,
-    },
-    traits: ['Friendly', 'Playful', 'Good with kids', 'Trained'],
-    services: ['Dog Walking', 'Day Care'],
-    about: 'Bruno is a friendly Golden Retriever who loves walks in the park!',
+    distance: '0.8 km',
+    rating: 4.9,
+    reviews: 47,
+    verified: true,
+    bio: 'Animal lover with 3 years experience caring for pets. Your furry friends are in safe hands!',
+    services: ['Dog Walking', 'Pet Sitting', 'Day Care'],
+    experience: 'Expert',
+    prompts: [
+      { prompt: 'My ideal Saturday with a pet involves...', answer: 'Long walks in the park followed by cuddle time!' },
+      { prompt: 'The way to my heart is through...', answer: 'A wagging tail and wet nose kisses' },
+    ],
   },
   {
     id: '2',
-    name: 'Whiskers',
-    breed: 'Persian Cat',
-    age: '2 years',
-    gender: 'Female',
+    name: 'Rahul',
+    age: 28,
     photos: [
-      'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=400',
-      'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=400',
-      'https://images.unsplash.com/photo-1495360010541-f48722b34f7d?w=400',
-      'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=400',
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400',
+      'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400',
     ],
-    owner: {
-      name: 'Priya Sharma',
-      location: 'Indiranagar, Bangalore',
-      distance: '0.8 km',
-      verified: true,
-    },
-    traits: ['Calm', 'Independent', 'Indoor', 'Cuddly'],
-    services: ['Pet Sitting', 'Overnight Stay'],
-    about: 'Whiskers is a calm Persian who loves cuddles.',
+    distance: '1.2 km',
+    rating: 4.8,
+    reviews: 32,
+    verified: true,
+    bio: 'Dog dad to 2 golden retrievers. I treat every pet like my own family member.',
+    services: ['Day Care', 'Overnight Stay', 'Dog Walking'],
+    experience: 'Expert',
+    prompts: [
+      { prompt: 'My hidden talent with animals is...', answer: 'I can calm any anxious pet within minutes!' },
+    ],
   },
   {
     id: '3',
-    name: 'Max',
-    breed: 'Labrador',
-    age: '4 years',
-    gender: 'Male',
+    name: 'Anita',
+    age: 32,
     photos: [
-      'https://images.unsplash.com/photo-1605897472359-85e4b94d685a?w=400',
-      'https://images.unsplash.com/photo-1579213838942-6f6882e1c40b?w=400',
-      'https://images.unsplash.com/photo-1591769225440-811ad7d6eab3?w=400',
-      'https://images.unsplash.com/photo-1587559045816-8b0a54d12c73?w=400',
-      'https://images.unsplash.com/photo-1583511655826-05700d52f4d9?w=400',
+      'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400',
+      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400',
+      'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400',
+      'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=400',
+      'https://images.unsplash.com/photo-1502685104226-ee32379fefbe?w=400',
     ],
-    owner: {
-      name: 'Amit Patel',
-      location: 'HSR Layout, Bangalore',
-      distance: '2.5 km',
-      verified: false,
-    },
-    traits: ['Energetic', 'Loves swimming', 'Fetch lover', 'Social'],
-    services: ['Dog Walking', 'Day Care', 'Pet Meetup'],
-    about: 'Max is super energetic and loves outdoor activities!',
+    distance: '1.5 km',
+    rating: 5.0,
+    reviews: 89,
+    verified: true,
+    bio: 'Professional pet sitter certified in pet first aid. Specialized in senior pets and special needs.',
+    services: ['Pet Sitting', 'Grooming', 'Medical Care'],
+    experience: 'Professional',
+    prompts: [
+      { prompt: 'If I were a pet, I would be a...', answer: 'A loyal golden retriever - always happy to see you!' },
+      { prompt: 'My pet care philosophy is...', answer: 'Every pet deserves love, patience, and the best care possible' },
+    ],
   },
   {
     id: '4',
-    name: 'Coco',
-    breed: 'Beagle',
-    age: '1.5 years',
-    gender: 'Female',
+    name: 'Vikram',
+    age: 24,
     photos: [
-      'https://images.unsplash.com/photo-1505628346881-b72b27e84530?w=400',
-      'https://images.unsplash.com/photo-1611003228941-98852ba62227?w=400',
-      'https://images.unsplash.com/photo-1537151625747-768eb6cf92b2?w=400',
+      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400',
+      'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400',
     ],
-    owner: {
-      name: 'Neha Gupta',
-      location: 'Whitefield, Bangalore',
-      distance: '5 km',
-      verified: true,
-    },
-    traits: ['Curious', 'Friendly', 'Good with dogs', 'Active'],
-    services: ['Dog Walking', 'Overnight Stay'],
-    about: 'Coco is a curious little beagle who loves exploring!',
-  },
-  {
-    id: '5',
-    name: 'Rocky',
-    breed: 'German Shepherd',
-    age: '5 years',
-    gender: 'Male',
-    photos: [
-      'https://images.unsplash.com/photo-1589941013453-ec89f33b5e95?w=400',
-      'https://images.unsplash.com/photo-1568572933382-74d440642117?w=400',
-      'https://images.unsplash.com/photo-1553882809-a4f57e59501d?w=400',
-      'https://images.unsplash.com/photo-1552053831-71594a27632d?w=400',
+    distance: '2.1 km',
+    rating: 4.7,
+    reviews: 21,
+    verified: false,
+    bio: 'Active runner looking to walk your dogs! Great with high-energy breeds.',
+    services: ['Dog Walking', 'Pet Meetup', 'Training'],
+    experience: 'Intermediate',
+    prompts: [
+      { prompt: 'The most spontaneous thing I have done for a pet...', answer: 'Drove 3 hours to rescue a stray!' },
     ],
-    owner: {
-      name: 'Vikram Singh',
-      location: 'JP Nagar, Bangalore',
-      distance: '3.2 km',
-      verified: true,
-    },
-    traits: ['Loyal', 'Protective', 'Well-trained', 'Intelligent'],
-    services: ['Day Care', 'Pet Sitting'],
-    about: 'Rocky is a loyal and well-trained German Shepherd.',
   },
 ];
 
-export default function PetMatchScreen() {
+export default function LoverMatchScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  const [likedPets, setLikedPets] = useState<string[]>([]);
+  const [likedLovers, setLikedLovers] = useState<string[]>([]);
   const [showMatchModal, setShowMatchModal] = useState(false);
-  const [matchedPet, setMatchedPet] = useState<Pet | null>(null);
+  const [matchedLover, setMatchedLover] = useState<PetLover | null>(null);
 
   const position = useRef(new Animated.ValueXY()).current;
 
@@ -217,8 +187,8 @@ export default function PetMatchScreen() {
   };
 
   const swipeRight = () => {
-    const pet = mockPets[currentIndex];
-    setLikedPets([...likedPets, pet.id]);
+    const lover = mockLovers[currentIndex];
+    setLikedLovers([...likedLovers, lover.id]);
 
     Animated.timing(position, {
       toValue: { x: width + 100, y: 0 },
@@ -227,7 +197,7 @@ export default function PetMatchScreen() {
     }).start(() => {
       // Random match for demo
       if (Math.random() > 0.5) {
-        setMatchedPet(pet);
+        setMatchedLover(lover);
         setShowMatchModal(true);
       }
       nextCard();
@@ -248,28 +218,28 @@ export default function PetMatchScreen() {
   };
 
   const handlePhotoTap = (direction: 'left' | 'right') => {
-    const pet = mockPets[currentIndex];
-    if (!pet) return;
+    const lover = mockLovers[currentIndex];
+    if (!lover) return;
 
-    if (direction === 'right' && currentPhotoIndex < pet.photos.length - 1) {
+    if (direction === 'right' && currentPhotoIndex < lover.photos.length - 1) {
       setCurrentPhotoIndex(currentPhotoIndex + 1);
     } else if (direction === 'left' && currentPhotoIndex > 0) {
       setCurrentPhotoIndex(currentPhotoIndex - 1);
     }
   };
 
-  const currentPet = mockPets[currentIndex];
-  const nextPet = mockPets[currentIndex + 1];
+  const currentLover = mockLovers[currentIndex];
+  const nextLover = mockLovers[currentIndex + 1];
 
   // Empty state
-  if (currentIndex >= mockPets.length) {
+  if (currentIndex >= mockLovers.length) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIcon}>
-            <Ionicons name="paw" size={60} color={colors.gray[300]} />
+            <Ionicons name="heart" size={60} color={colors.gray[300]} />
           </View>
-          <Text style={styles.emptyTitle}>No more pets nearby</Text>
+          <Text style={styles.emptyTitle}>No more pet lovers nearby</Text>
           <Text style={styles.emptyText}>Check back later for new matches!</Text>
           <TouchableOpacity
             style={styles.refreshBtn}
@@ -291,7 +261,7 @@ export default function PetMatchScreen() {
       {/* Cards Container */}
       <View style={styles.cardsContainer}>
         {/* Next Card (behind) */}
-        {nextPet && (
+        {nextLover && (
           <Animated.View
             style={[
               styles.card,
@@ -299,7 +269,7 @@ export default function PetMatchScreen() {
               { transform: [{ scale: nextCardScale }] },
             ]}
           >
-            <Image source={{ uri: nextPet.photos[0] }} style={styles.cardImage} />
+            <Image source={{ uri: nextLover.photos[0] }} style={styles.cardImage} />
           </Animated.View>
         )}
 
@@ -331,14 +301,14 @@ export default function PetMatchScreen() {
             }}
           >
             <Image
-              source={{ uri: currentPet.photos[currentPhotoIndex] }}
+              source={{ uri: currentLover.photos[currentPhotoIndex] }}
               style={styles.cardImage}
             />
 
             {/* Photo indicators */}
-            {currentPet.photos.length > 1 && (
+            {currentLover.photos.length > 1 && (
               <View style={styles.photoIndicators}>
-                {currentPet.photos.map((_, index) => (
+                {currentLover.photos.map((_, index) => (
                   <View
                     key={index}
                     style={[
@@ -350,46 +320,43 @@ export default function PetMatchScreen() {
               </View>
             )}
 
-            {/* Gradient Overlay with Info */}
+            {/* Gradient Overlay */}
             <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.85)']}
+              colors={['transparent', 'rgba(0,0,0,0.8)']}
               style={styles.gradientOverlay}
             >
+              {/* Info Content */}
               <View style={styles.cardInfo}>
                 <View style={styles.nameRow}>
-                  <Text style={styles.petName}>{currentPet.name}</Text>
-                  {currentPet.owner.verified && (
+                  <Text style={styles.name}>{currentLover.name}, {currentLover.age}</Text>
+                  {currentLover.verified && (
                     <View style={styles.verifiedBadge}>
                       <Ionicons name="checkmark-circle" size={20} color="#10B981" />
                     </View>
                   )}
                 </View>
 
-                <Text style={styles.petBreed}>{currentPet.breed} • {currentPet.age}</Text>
-
                 <View style={styles.metaRow}>
-                  <Ionicons name="person" size={14} color="rgba(255,255,255,0.8)" />
-                  <Text style={styles.metaText}>{currentPet.owner.name}</Text>
-                  <Ionicons name="location" size={14} color="rgba(255,255,255,0.8)" style={{ marginLeft: 12 }} />
-                  <Text style={styles.metaText}>{currentPet.owner.distance}</Text>
-                </View>
-
-                <View style={styles.traitsRow}>
-                  {currentPet.traits.slice(0, 3).map((trait) => (
-                    <View key={trait} style={styles.traitBadge}>
-                      <Text style={styles.traitText}>{trait}</Text>
-                    </View>
-                  ))}
+                  <Ionicons name="location" size={14} color="rgba(255,255,255,0.8)" />
+                  <Text style={styles.metaText}>{currentLover.distance}</Text>
+                  <Ionicons name="star" size={14} color="#F59E0B" style={{ marginLeft: 12 }} />
+                  <Text style={styles.metaText}>{currentLover.rating} ({currentLover.reviews})</Text>
                 </View>
 
                 <View style={styles.servicesRow}>
-                  <Text style={styles.servicesLabel}>Looking for:</Text>
-                  {currentPet.services.slice(0, 2).map((service) => (
+                  {currentLover.services.slice(0, 3).map((service) => (
                     <View key={service} style={styles.serviceBadge}>
                       <Text style={styles.serviceText}>{service}</Text>
                     </View>
                   ))}
                 </View>
+
+                {currentLover.prompts && currentLover.prompts[0] && (
+                  <View style={styles.promptCard}>
+                    <Text style={styles.promptQuestion}>{currentLover.prompts[0].prompt}</Text>
+                    <Text style={styles.promptAnswer}>{currentLover.prompts[0].answer}</Text>
+                  </View>
+                )}
               </View>
             </LinearGradient>
 
@@ -423,7 +390,7 @@ export default function PetMatchScreen() {
           <View style={styles.matchContent}>
             <Text style={styles.matchTitle}>It's a Match!</Text>
             <Text style={styles.matchSubtitle}>
-              You and {matchedPet?.owner.name} both liked each other
+              You and {matchedLover?.name} liked each other
             </Text>
 
             <View style={styles.matchImages}>
@@ -438,19 +405,17 @@ export default function PetMatchScreen() {
               </View>
               <View style={styles.matchImageContainer}>
                 <Image
-                  source={{ uri: matchedPet?.photos[0] }}
+                  source={{ uri: matchedLover?.photos[0] }}
                   style={styles.matchImage}
                 />
               </View>
             </View>
 
-            <Text style={styles.petMatchName}>{matchedPet?.name}</Text>
-
             <TouchableOpacity
               style={styles.messageBtn}
               onPress={() => {
                 setShowMatchModal(false);
-                navigation.navigate('Chat');
+                navigation.navigate('Messages');
               }}
             >
               <Text style={styles.messageBtnText}>Send Message</Text>
@@ -529,15 +494,15 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   cardInfo: {
-    gap: 8,
+    gap: 10,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  petName: {
-    fontSize: 32,
+  name: {
+    fontSize: 28,
     fontWeight: '800',
     color: colors.white,
   },
@@ -546,51 +511,22 @@ const styles = StyleSheet.create({
     padding: 4,
     borderRadius: 12,
   },
-  petBreed: {
-    fontSize: 18,
-    color: 'rgba(255,255,255,0.9)',
-    fontWeight: '500',
-  },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 4,
   },
   metaText: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.85)',
-  },
-  traitsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-    flexWrap: 'wrap',
-  },
-  traitBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  traitText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.white,
+    color: 'rgba(255,255,255,0.9)',
   },
   servicesRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
-    marginTop: 4,
     flexWrap: 'wrap',
   },
-  servicesLabel: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
-  },
   serviceBadge: {
-    backgroundColor: 'rgba(236, 72, 153, 0.3)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
@@ -598,7 +534,24 @@ const styles = StyleSheet.create({
   serviceText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#EC4899',
+    color: colors.white,
+  },
+  promptCard: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 4,
+  },
+  promptQuestion: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 4,
+  },
+  promptAnswer: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.white,
+    lineHeight: 20,
   },
   stamp: {
     position: 'absolute',
@@ -733,7 +686,7 @@ const styles = StyleSheet.create({
   matchImages: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 24,
   },
   matchImageContainer: {
     width: 90,
@@ -761,12 +714,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
-  },
-  petMatchName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.gray[900],
-    marginBottom: 24,
   },
   messageBtn: {
     backgroundColor: '#EC4899',

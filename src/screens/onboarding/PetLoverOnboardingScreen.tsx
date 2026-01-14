@@ -20,6 +20,13 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../../lib/auth';
 import { colors } from '../../theme/colors';
+import PromptSelector from '../../components/PromptSelector';
+
+interface SelectedPrompt {
+  promptId: string;
+  prompt: string;
+  answer: string;
+}
 
 export default function PetLoverOnboardingScreen() {
   const navigation = useNavigation<any>();
@@ -52,6 +59,10 @@ export default function PetLoverOnboardingScreen() {
   const [services, setServices] = useState<string[]>([]);
   const [availability, setAvailability] = useState<string[]>([]);
   const [experience, setExperience] = useState('');
+
+  // Prompts
+  const [selectedPrompts, setSelectedPrompts] = useState<SelectedPrompt[]>([]);
+  const [practicalAnswers, setPracticalAnswers] = useState<{ [key: string]: string }>({});
 
   const handleDateChange = (event: any, date?: Date) => {
     if (Platform.OS === 'android') {
@@ -164,6 +175,8 @@ export default function PetLoverOnboardingScreen() {
         services: services,
         availability: availability,
         experience: experience.trim(),
+        prompts: selectedPrompts,
+        practicalAnswers: practicalAnswers,
         onboardingComplete: true,
       });
       navigation.reset({
@@ -490,9 +503,24 @@ export default function PetLoverOnboardingScreen() {
   );
 
   const renderStep3 = () => (
+    <ScrollView showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepTitle}>Add Personality</Text>
+      <Text style={styles.stepSubtitle}>Let pet owners know more about you</Text>
+
+      <PromptSelector
+        role="LOVER"
+        selectedPrompts={selectedPrompts}
+        practicalAnswers={practicalAnswers}
+        onPromptsChange={setSelectedPrompts}
+        onPracticalAnswersChange={setPracticalAnswers}
+      />
+    </ScrollView>
+  );
+
+  const renderStep4 = () => (
     <View style={styles.verificationContainer}>
       <View style={styles.verificationIcon}>
-        <Ionicons name="shield-checkmark" size={60} color="{colors.primary}" />
+        <Ionicons name="shield-checkmark" size={60} color={colors.primary} />
       </View>
       <Text style={styles.stepTitle}>Aadhaar Verification</Text>
       <Text style={styles.verificationText}>
@@ -523,9 +551,9 @@ export default function PetLoverOnboardingScreen() {
         {/* Progress */}
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${(step / 3) * 100}%`, backgroundColor: colors.primary }]} />
+            <View style={[styles.progressFill, { width: `${(step / 4) * 100}%`, backgroundColor: colors.primary }]} />
           </View>
-          <Text style={styles.progressText}>Step {step} of 3</Text>
+          <Text style={styles.progressText}>Step {step} of 4</Text>
         </View>
 
         {/* Content */}
@@ -533,10 +561,11 @@ export default function PetLoverOnboardingScreen() {
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
         </View>
 
         {/* Footer */}
-        {step < 3 && (
+        {step < 4 && (
           <View style={styles.footer}>
             {step > 1 && (
               <TouchableOpacity

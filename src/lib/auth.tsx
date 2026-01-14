@@ -46,6 +46,9 @@ interface User {
   services?: string[];
   availability?: string[];
   experience?: string;
+  // Prompts (Bumble-style)
+  prompts?: { promptId: string; prompt: string; answer: string }[];
+  practicalAnswers?: { [key: string]: string };
   // Supplier fields
   businessName?: string;
   gstNumber?: string;

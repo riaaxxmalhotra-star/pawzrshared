@@ -47,8 +47,8 @@ export const FEATURES = {
   INVENTORY: false,
   ADD_PRODUCT: false,
 
-  // Communication (Phase 2)
-  MESSAGES: false,
+  // Communication
+  MESSAGES: true,  // Enabled for Bumble-style chat
   NOTIFICATIONS: false,
 
   // Verification (Phase 2)

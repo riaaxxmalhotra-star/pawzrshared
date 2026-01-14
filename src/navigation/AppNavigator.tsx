@@ -19,6 +19,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import RoleSelectionScreen from '../screens/RoleSelectionScreen';
 import OnboardingNavigator from '../screens/onboarding';
 import PetMatchScreen from '../screens/PetMatchScreen';
+import LoverMatchScreen from '../screens/LoverMatchScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import MyPetsScreen from '../screens/MyPetsScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
@@ -67,10 +68,8 @@ export type HomeStackParamList = {
 
 export type MainTabParamList = {
   Home: undefined;
-  Browse: undefined;
-  Match: undefined;
-  Pets: undefined;
-  Messages: undefined;
+  Swipe: undefined;  // Role-based: Owners see LoverMatch, Lovers see PetMatch
+  Chat: undefined;
   Profile: undefined;
 };
 
@@ -111,11 +110,23 @@ function HomeNavigator() {
   );
 }
 
+// Swipe screen that shows different content based on role
+function SwipeScreen() {
+  const { user } = useAuth();
+  const userRole = (user?.role || 'OWNER').toUpperCase();
+
+  // Pet Owners swipe through Pet Lovers
+  // Pet Lovers swipe through Pets
+  if (userRole === 'LOVER') {
+    return <PetMatchScreen />;
+  }
+  return <LoverMatchScreen />;
+}
+
 function MainNavigator() {
   const { user } = useAuth();
   const userRole = (user?.role || 'OWNER').toUpperCase();
   const isLover = userRole === 'LOVER';
-  const isOwner = userRole === 'OWNER';
 
   return (
     <MainTab.Navigator
@@ -127,16 +138,16 @@ function MainNavigator() {
             case 'Home':
               iconName = focused ? 'home' : 'home-outline';
               break;
-            case 'Browse':
-              iconName = focused ? 'compass' : 'compass-outline';
-              break;
-            case 'Match':
-              iconName = focused ? 'heart' : 'heart-outline';
-              break;
-            case 'Pets':
-              iconName = focused ? 'paw' : 'paw-outline';
-              break;
-            case 'Messages':
+            case 'Swipe':
+              // Always use filled heart, orange when active
+              return (
+                <Ionicons
+                  name="heart"
+                  size={focused ? 28 : 24}
+                  color={focused ? '#FF6B35' : colors.gray[400]}
+                />
+              );
+            case 'Chat':
               iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
               break;
             case 'Profile':
@@ -176,63 +187,41 @@ function MainNavigator() {
         },
       })}
     >
-      {/* Home - Always visible */}
+      {/* Home */}
       <MainTab.Screen
         name="Home"
         component={HomeNavigator}
         options={{ tabBarLabel: 'Home' }}
       />
 
-      {/* Browse/Explore - For Pet Owners */}
-      {isOwner && FEATURES.BROWSE && (
-        <MainTab.Screen
-          name="Browse"
-          component={BrowseScreen}
-          options={{ tabBarLabel: 'Explore' }}
-        />
-      )}
+      {/* Swipe - Role-based content */}
+      <MainTab.Screen
+        name="Swipe"
+        component={SwipeScreen}
+        options={{
+          tabBarLabel: isLover ? 'Match' : 'Find',
+          tabBarActiveTintColor: '#FF6B35',
+        }}
+      />
 
-      {/* Match - For Pet Lovers (Bumble-style swipe) */}
-      {isLover && FEATURES.PET_MATCH && (
-        <MainTab.Screen
-          name="Match"
-          component={PetMatchScreen}
-          options={{
-            tabBarLabel: 'Match',
-            tabBarActiveTintColor: '#EC4899',
-          }}
-        />
-      )}
+      {/* Chat */}
+      <MainTab.Screen
+        name="Chat"
+        component={MessagesScreen}
+        options={{
+          tabBarLabel: 'Chat',
+          tabBarBadge: 3,
+          tabBarBadgeStyle: {
+            backgroundColor: colors.primary,
+            fontSize: 10,
+            minWidth: 18,
+            height: 18,
+            borderRadius: 9,
+          },
+        }}
+      />
 
-      {/* Pets - For Pet Owners */}
-      {isOwner && FEATURES.PETS && (
-        <MainTab.Screen
-          name="Pets"
-          component={PetsScreen}
-          options={{ tabBarLabel: 'My Pets' }}
-        />
-      )}
-
-      {/* Messages - Hidden for now (Phase 2) */}
-      {FEATURES.MESSAGES && (
-        <MainTab.Screen
-          name="Messages"
-          component={MessagesScreen}
-          options={{
-            tabBarLabel: 'Chat',
-            tabBarBadge: 3,
-            tabBarBadgeStyle: {
-              backgroundColor: colors.primary,
-              fontSize: 10,
-              minWidth: 18,
-              height: 18,
-              borderRadius: 9,
-            },
-          }}
-        />
-      )}
-
-      {/* Profile - Always visible */}
+      {/* Profile */}
       <MainTab.Screen
         name="Profile"
         component={ProfileScreen}

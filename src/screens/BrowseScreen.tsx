@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,127 +6,83 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Image,
   Dimensions,
-  ActivityIndicator,
-  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { providersApi, productsApi } from '../lib/api';
 
 const { width } = Dimensions.get('window');
 
-const categories = [
-  { id: 'vets', label: 'Vets', icon: 'medical', color: '#10B981' },
-  { id: 'groomers', label: 'Groomers', icon: 'cut', color: '#8B5CF6' },
-  { id: 'walkers', label: 'Pet Lovers', icon: 'heart', color: '#3B82F6' },
-  { id: 'shop', label: 'Shop', icon: 'storefront', color: colors.primary },
+// Mock pet lovers data
+const petLovers = [
+  {
+    id: '1',
+    name: 'Priya Sharma',
+    age: 25,
+    image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200',
+    rating: 4.9,
+    reviews: 47,
+    distance: '0.8 km',
+    services: ['Dog Walking', 'Pet Sitting'],
+    verified: true,
+    bio: 'Animal lover with 3 years experience. Your pets are in safe hands!',
+  },
+  {
+    id: '2',
+    name: 'Rahul Kumar',
+    age: 28,
+    image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
+    rating: 4.8,
+    reviews: 32,
+    distance: '1.2 km',
+    services: ['Day Care', 'Overnight Stay'],
+    verified: true,
+    bio: 'Dog dad to 2 golden retrievers. Love all pets equally!',
+  },
+  {
+    id: '3',
+    name: 'Anita Desai',
+    age: 32,
+    image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200',
+    rating: 5.0,
+    reviews: 89,
+    distance: '1.5 km',
+    services: ['Pet Sitting', 'Dog Walking', 'Grooming'],
+    verified: true,
+    bio: 'Professional pet sitter. Certified in pet first aid!',
+  },
+  {
+    id: '4',
+    name: 'Vikram Singh',
+    age: 24,
+    image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200',
+    rating: 4.7,
+    reviews: 21,
+    distance: '2.1 km',
+    services: ['Dog Walking', 'Pet Meetup'],
+    verified: false,
+    bio: 'Active runner looking to walk your dogs!',
+  },
 ];
 
-interface Provider {
-  id: string;
-  name: string;
-  type: string;
-  specialty?: string;
-  rating?: number;
-  reviews?: number;
-  price?: string;
-  available?: boolean;
-  distance?: string;
-  city?: string;
-  bio?: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  brand?: string;
-  price: number;
-  originalPrice?: number;
-  rating?: number;
-  image?: string;
-  category?: string;
-}
-
 export default function BrowseScreen() {
-  const [activeCategory, setActiveCategory] = useState('vets');
   const [searchQuery, setSearchQuery] = useState('');
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    loadData();
-  }, [activeCategory]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      if (activeCategory === 'shop') {
-        const data = await productsApi.getProducts();
-        setProducts(data.products || data || []);
-      } else {
-        let data;
-        if (activeCategory === 'vets') {
-          data = await providersApi.getVets();
-          setProviders((data.vets || data || []).map((v: any) => ({ ...v, type: 'Veterinarian' })));
-        } else if (activeCategory === 'groomers') {
-          data = await providersApi.getGroomers();
-          setProviders((data.groomers || data || []).map((g: any) => ({ ...g, type: 'Groomer' })));
-        } else if (activeCategory === 'walkers') {
-          data = await providersApi.getLovers();
-          setProviders((data.lovers || data || []).map((l: any) => ({ ...l, type: 'Pet Lover' })));
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load data:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadData();
-  };
-
-  const getTypeIcon = (type: string) => {
-    switch (type.toLowerCase()) {
-      case 'veterinarian':
-        return 'medical';
-      case 'groomer':
-        return 'cut';
-      case 'pet walker':
-        return 'walk';
-      default:
-        return 'person';
-    }
-  };
-
-  const getTypeColor = (type: string) => {
-    switch (type.toLowerCase()) {
-      case 'veterinarian':
-        return '#10B981';
-      case 'groomer':
-        return '#8B5CF6';
-      case 'pet walker':
-        return '#3B82F6';
-      default:
-        return colors.primary;
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Explore</Text>
-        <TouchableOpacity style={styles.filterButton}>
-          <Ionicons name="options-outline" size={22} color={colors.gray[700]} />
-        </TouchableOpacity>
+        <View style={styles.logoContainer}>
+          <Text style={styles.logo}>pawzr</Text>
+        </View>
+      </View>
+
+      {/* Title */}
+      <View style={styles.titleSection}>
+        <Text style={styles.title}>Find Pet Lovers</Text>
+        <Text style={styles.subtitle}>Trusted people who'll care for your pets</Text>
       </View>
 
       {/* Search Bar */}
@@ -134,7 +90,7 @@ export default function BrowseScreen() {
         <Ionicons name="search" size={20} color={colors.gray[400]} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search vets, groomers, products..."
+          placeholder="Search by name or service..."
           placeholderTextColor={colors.gray[400]}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -146,164 +102,81 @@ export default function BrowseScreen() {
         )}
       </View>
 
-      {/* Categories */}
-      <View style={styles.categoriesContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {categories.map((cat) => (
-            <TouchableOpacity
-              key={cat.id}
-              style={[
-                styles.categoryChip,
-                activeCategory === cat.id && { backgroundColor: cat.color },
-              ]}
-              onPress={() => setActiveCategory(cat.id)}
-            >
-              <Ionicons
-                name={cat.icon as any}
-                size={18}
-                color={activeCategory === cat.id ? colors.white : cat.color}
-              />
-              <Text
-                style={[
-                  styles.categoryText,
-                  activeCategory === cat.id && { color: colors.white },
-                ]}
-              >
-                {cat.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
+      {/* Service Filter Pills */}
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-        }
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterContainer}
       >
-        {/* Loading State */}
-        {loading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading...</Text>
-          </View>
-        )}
+        <TouchableOpacity style={[styles.filterPill, styles.filterPillActive]}>
+          <Text style={[styles.filterText, styles.filterTextActive]}>All</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.filterPill}>
+          <Text style={styles.filterText}>Dog Walking</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.filterPill}>
+          <Text style={styles.filterText}>Pet Sitting</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.filterPill}>
+          <Text style={styles.filterText}>Day Care</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.filterPill}>
+          <Text style={styles.filterText}>Overnight</Text>
+        </TouchableOpacity>
+      </ScrollView>
 
-        {/* Service Providers */}
-        {!loading && activeCategory !== 'shop' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Near You</Text>
-              <TouchableOpacity>
-                <Text style={styles.seeAllText}>See all</Text>
-              </TouchableOpacity>
-            </View>
+      {/* Results */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.resultsContainer}>
+        <Text style={styles.resultsTitle}>Near You</Text>
 
-            {providers.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="search" size={48} color={colors.gray[300]} />
-                <Text style={styles.emptyText}>No providers found</Text>
-                <Text style={styles.emptySubtext}>Try changing your search or location</Text>
+        {petLovers.map((lover) => (
+          <TouchableOpacity key={lover.id} style={styles.loverCard} activeOpacity={0.8}>
+            <Image source={{ uri: lover.image }} style={styles.loverImage} />
+
+            <View style={styles.loverInfo}>
+              <View style={styles.loverHeader}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.loverName}>{lover.name}</Text>
+                  {lover.verified && (
+                    <View style={styles.verifiedBadge}>
+                      <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.ratingBadge}>
+                  <Ionicons name="star" size={12} color="#F59E0B" />
+                  <Text style={styles.ratingText}>{lover.rating}</Text>
+                </View>
               </View>
-            ) : (
-              providers.map((provider) => (
-                <TouchableOpacity key={provider.id} style={styles.providerCard}>
-                  <View
-                    style={[
-                      styles.providerAvatar,
-                      { backgroundColor: `${getTypeColor(provider.type)}15` },
-                    ]}
-                  >
-                    <Ionicons
-                      name={getTypeIcon(provider.type) as any}
-                      size={28}
-                      color={getTypeColor(provider.type)}
-                    />
-                  </View>
-                  <View style={styles.providerInfo}>
-                    <View style={styles.providerHeader}>
-                      <Text style={styles.providerName}>{provider.name}</Text>
-                      {provider.available ? (
-                        <View style={styles.availableBadge}>
-                          <Text style={styles.availableText}>Available</Text>
-                        </View>
-                      ) : (
-                        <View style={styles.unavailableBadge}>
-                          <Text style={styles.unavailableText}>Busy</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.providerSpecialty}>{provider.specialty}</Text>
-                    <View style={styles.providerMeta}>
-                      <View style={styles.ratingContainer}>
-                        <Ionicons name="star" size={14} color="#F59E0B" />
-                        <Text style={styles.ratingText}>{provider.rating}</Text>
-                        <Text style={styles.reviewsText}>({provider.reviews})</Text>
-                      </View>
-                      <View style={styles.distanceContainer}>
-                        <Ionicons name="location" size={14} color={colors.gray[400]} />
-                        <Text style={styles.distanceText}>{provider.distance}</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.providerPrice}>
-                    <Text style={styles.priceText}>{provider.price}</Text>
-                    <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
-                  </View>
-                </TouchableOpacity>
-              ))
-            )}
-          </View>
-        )}
 
-        {/* Products */}
-        {!loading && activeCategory === 'shop' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Featured Products</Text>
-              <TouchableOpacity>
-                <Text style={styles.seeAllText}>See all</Text>
-              </TouchableOpacity>
-            </View>
+              <Text style={styles.loverBio} numberOfLines={2}>{lover.bio}</Text>
 
-            {products.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="cart" size={48} color={colors.gray[300]} />
-                <Text style={styles.emptyText}>No products found</Text>
-                <Text style={styles.emptySubtext}>Check back later for new items</Text>
-              </View>
-            ) : (
-              <View style={styles.productsGrid}>
-                {products.map((product) => (
-                  <TouchableOpacity key={product.id} style={styles.productCard}>
-                    <View style={styles.productImage}>
-                      <Ionicons name="cube" size={40} color={colors.primary} />
-                    </View>
-                    <View style={styles.productInfo}>
-                      <Text style={styles.productBrand}>{product.brand || 'Brand'}</Text>
-                      <Text style={styles.productName} numberOfLines={2}>
-                        {product.name}
-                      </Text>
-                      <View style={styles.productPricing}>
-                        <Text style={styles.productPrice}>₹{product.price}</Text>
-                        {product.originalPrice && (
-                          <Text style={styles.originalPrice}>₹{product.originalPrice}</Text>
-                        )}
-                      </View>
-                      {product.rating && (
-                        <View style={styles.productRating}>
-                          <Ionicons name="star" size={12} color="#F59E0B" />
-                          <Text style={styles.productRatingText}>{product.rating}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
+              <View style={styles.servicesRow}>
+                {lover.services.slice(0, 2).map((service) => (
+                  <View key={service} style={styles.serviceBadge}>
+                    <Text style={styles.serviceText}>{service}</Text>
+                  </View>
                 ))}
               </View>
-            )}
-          </View>
-        )}
+
+              <View style={styles.metaRow}>
+                <View style={styles.metaItem}>
+                  <Ionicons name="location-outline" size={14} color={colors.gray[400]} />
+                  <Text style={styles.metaText}>{lover.distance}</Text>
+                </View>
+                <View style={styles.metaItem}>
+                  <Ionicons name="chatbubble-outline" size={14} color={colors.gray[400]} />
+                  <Text style={styles.metaText}>{lover.reviews} reviews</Text>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.heartBtn}>
+              <Ionicons name="heart-outline" size={22} color="#EC4899" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ))}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -317,29 +190,36 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    paddingTop: 10,
+    paddingBottom: 10,
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
   },
-  headerTitle: {
+  logoContainer: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  logo: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.5,
+  },
+  titleSection: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: colors.gray[900],
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+  subtitle: {
+    fontSize: 15,
+    color: colors.gray[500],
+    marginTop: 4,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -347,251 +227,159 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     marginHorizontal: 20,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
+    paddingVertical: 14,
+    borderRadius: 20,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 10,
-    fontSize: 15,
+    marginLeft: 12,
+    fontSize: 16,
     color: colors.gray[900],
   },
-  categoriesContainer: {
-    paddingVertical: 16,
-    paddingLeft: 20,
+  filterScroll: {
+    marginTop: 16,
+    marginBottom: 8,
   },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
+  filterContainer: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  filterPill: {
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 25,
+    borderRadius: 20,
     backgroundColor: colors.white,
-    marginRight: 10,
-    gap: 6,
     shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  categoryText: {
+  filterPillActive: {
+    backgroundColor: colors.primary,
+  },
+  filterText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.gray[700],
+    color: colors.gray[600],
   },
-  section: {
+  filterTextActive: {
+    color: colors.white,
+  },
+  resultsContainer: {
     paddingHorizontal: 20,
-    marginTop: 8,
+    paddingTop: 16,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
+  resultsTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.gray[900],
+    marginBottom: 16,
   },
-  seeAllText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  providerCard: {
+  loverCard: {
     flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 14,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  providerAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
+  loverImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 16,
+    backgroundColor: colors.gray[200],
   },
-  providerInfo: {
+  loverInfo: {
     flex: 1,
+    marginLeft: 14,
   },
-  providerHeader: {
+  loverHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
-  providerName: {
-    fontSize: 16,
-    fontWeight: '600',
+  loverName: {
+    fontSize: 17,
+    fontWeight: '700',
     color: colors.gray[900],
   },
-  availableBadge: {
-    backgroundColor: '#D1FAE5',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
+  verifiedBadge: {
+    backgroundColor: '#10B98115',
+    padding: 2,
+    borderRadius: 10,
   },
-  availableText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  unavailableBadge: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  unavailableText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
-  providerSpecialty: {
-    fontSize: 13,
-    color: colors.gray[500],
-    marginTop: 2,
-  },
-  providerMeta: {
+  ratingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    gap: 16,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
     gap: 4,
   },
   ratingText: {
     fontSize: 13,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  loverBio: {
+    fontSize: 13,
+    color: colors.gray[500],
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  servicesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  serviceBadge: {
+    backgroundColor: '#EC489915',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  serviceText: {
+    fontSize: 11,
     fontWeight: '600',
-    color: colors.gray[700],
+    color: '#EC4899',
   },
-  reviewsText: {
-    fontSize: 12,
-    color: colors.gray[400],
+  metaRow: {
+    flexDirection: 'row',
+    gap: 16,
   },
-  distanceContainer: {
+  metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  distanceText: {
+  metaText: {
     fontSize: 12,
     color: colors.gray[500],
   },
-  providerPrice: {
-    alignItems: 'flex-end',
-  },
-  priceText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.primary,
-    marginBottom: 4,
-  },
-  productsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  productCard: {
-    width: (width - 52) / 2,
-    backgroundColor: colors.white,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  productImage: {
-    height: 120,
-    backgroundColor: `${colors.primary}10`,
+  heartBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EC489910',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  productInfo: {
-    padding: 12,
-  },
-  productBrand: {
-    fontSize: 11,
-    color: colors.gray[400],
-    textTransform: 'uppercase',
-  },
-  productName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.gray[900],
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  productPricing: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    gap: 6,
-  },
-  productPrice: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  originalPrice: {
-    fontSize: 12,
-    color: colors.gray[400],
-    textDecorationLine: 'line-through',
-  },
-  productRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    gap: 4,
-  },
-  productRatingText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.gray[600],
-  },
-  loadingContainer: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: colors.gray[500],
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 40,
-    backgroundColor: colors.white,
-    borderRadius: 16,
-  },
-  emptyText: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.gray[700],
-  },
-  emptySubtext: {
-    marginTop: 4,
-    fontSize: 14,
-    color: colors.gray[500],
+    alignSelf: 'center',
   },
 });
