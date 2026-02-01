@@ -173,7 +173,7 @@ export default function BrowseScreen() {
             </View>
 
             <TouchableOpacity style={styles.heartBtn}>
-              <Ionicons name="heart-outline" size={22} color="#EC4899" />
+              <Ionicons name="heart-outline" size={22} color="#F97316" />
             </TouchableOpacity>
           </TouchableOpacity>
         ))}
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   serviceBadge: {
-    backgroundColor: '#EC489915',
+    backgroundColor: '#F9731615',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
   serviceText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#EC4899',
+    color: '#F97316',
   },
   metaRow: {
     flexDirection: 'row',
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#EC489910',
+    backgroundColor: '#F9731610',
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',

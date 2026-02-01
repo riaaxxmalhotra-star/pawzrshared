@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
 import { colors } from '../../theme/colors';
+import logger from '../../lib/logger';
 
 export default function SupplierOnboardingScreen() {
   const navigation = useNavigation<any>();
@@ -57,7 +58,7 @@ export default function SupplierOnboardingScreen() {
           setState(postOffice.State || '');
         }
       } catch (error) {
-        console.log('Pincode lookup failed:', error);
+        logger.log('Pincode lookup failed:', error);
       } finally {
         setIsPincodeLoading(false);
       }
@@ -139,7 +140,7 @@ export default function SupplierOnboardingScreen() {
       });
       navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
     } catch (error) {
-      console.error('Error saving profile:', error);
+      logger.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
       setIsLoading(false);

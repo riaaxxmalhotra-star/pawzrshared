@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,15 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
-  Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors } from '../theme/colors';
-import { messagesApi } from '../lib/api';
+import { messagesApi, likesApi } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import logger from '../lib/logger';
 
 interface Conversation {
   id: string;
@@ -27,128 +29,179 @@ interface Conversation {
   avatar: string;
   online: boolean;
   recipientId?: string;
+  petName?: string;
+  petId?: string;
 }
 
 interface Message {
   id: string;
   text: string;
-  content?: string;
   sent: boolean;
   time: string;
-  createdAt?: string;
 }
 
-interface Provider {
+interface MatchedUser {
   id: string;
   name: string;
-  type: 'vet' | 'groomer' | 'supplier' | 'lover' | 'owner';
-  specialty?: string;
-  rating: number;
-  online: boolean;
+  type: 'lover' | 'owner';
+  photo?: string;
+  online?: boolean;
+  verified?: boolean;
 }
-
-// Mock providers for starting new conversations
-const mockProviders: Provider[] = [
-  { id: 'v1', name: 'Dr. Sarah Sharma', type: 'vet', specialty: 'General Medicine', rating: 4.9, online: true },
-  { id: 'v2', name: 'Dr. Amit Kumar', type: 'vet', specialty: 'Surgery', rating: 4.8, online: false },
-  { id: 'g1', name: 'PetSpa Studio', type: 'groomer', specialty: 'Full Grooming', rating: 4.7, online: true },
-  { id: 'g2', name: 'Fluffy Tails', type: 'groomer', specialty: 'Dog Grooming', rating: 4.6, online: false },
-  { id: 's1', name: 'Pet Paradise Store', type: 'supplier', specialty: 'Pet Food & Accessories', rating: 4.8, online: true },
-  { id: 's2', name: 'Happy Paws Shop', type: 'supplier', specialty: 'Premium Pet Products', rating: 4.5, online: false },
-  { id: 'l1', name: 'Priya Mehta', type: 'lover', specialty: 'Dog Walking & Pet Sitting', rating: 4.9, online: true },
-  { id: 'l2', name: 'Rahul Singh', type: 'lover', specialty: 'Cat Care Specialist', rating: 4.7, online: false },
-];
-
-// Mock pet owners for providers to chat with
-const mockPetOwners: Provider[] = [
-  { id: 'o1', name: 'Anita Desai', type: 'owner', specialty: '2 Dogs, 1 Cat', rating: 5.0, online: true },
-  { id: 'o2', name: 'Vikram Patel', type: 'owner', specialty: 'Golden Retriever', rating: 5.0, online: false },
-  { id: 'o3', name: 'Meera Sharma', type: 'owner', specialty: '3 Cats', rating: 5.0, online: true },
-];
 
 export default function MessagesScreen() {
   const { user } = useAuth();
-  const userRole = (user?.role || 'OWNER').toUpperCase();
-  const isOwner = !['VET', 'GROOMER', 'SUPPLIER', 'LOVER'].includes(userRole);
+  const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
-  const [showNewChatModal, setShowNewChatModal] = useState(false);
-  const [providerFilter, setProviderFilter] = useState<'all' | 'vet' | 'groomer' | 'supplier' | 'lover' | 'owner'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [initialized, setInitialized] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+  const paramsProcessedRef = useRef<string | null>(null);
 
-  // Get contacts based on user role
-  const getContactsList = () => {
-    if (isOwner) {
-      // Pet owners can chat with vets, groomers, suppliers, and pet lovers
-      if (providerFilter === 'all') return mockProviders;
-      return mockProviders.filter(p => p.type === providerFilter);
-    } else {
-      // Providers can chat with pet owners and other providers
-      if (providerFilter === 'all') return [...mockPetOwners, ...mockProviders.filter(p => p.type !== userRole.toLowerCase())];
-      if (providerFilter === 'owner') return mockPetOwners;
-      return mockProviders.filter(p => p.type === providerFilter);
+  // Role-based configuration
+  const userRole = (user?.role || 'OWNER').toUpperCase();
+  const isProvider = ['VET', 'GROOMER', 'SUPPLIER'].includes(userRole);
+
+  const getRoleConfig = () => {
+    switch (userRole) {
+      case 'VET':
+        return {
+          color: '#10B981',
+          emptyTitle: 'No patient messages yet',
+          emptySubtitle: 'Pet owners will message you when they need veterinary care',
+          searchPlaceholder: 'Search patient chats...',
+        };
+      case 'GROOMER':
+        return {
+          color: '#8B5CF6',
+          emptyTitle: 'No client messages yet',
+          emptySubtitle: 'Pet owners will contact you for grooming appointments',
+          searchPlaceholder: 'Search client chats...',
+        };
+      case 'SUPPLIER':
+        return {
+          color: '#3B82F6',
+          emptyTitle: 'No customer inquiries yet',
+          emptySubtitle: 'Customers will reach out with product questions and orders',
+          searchPlaceholder: 'Search customer chats...',
+        };
+      case 'LOVER':
+        return {
+          color: '#F97316',
+          emptyTitle: 'No matches yet',
+          emptySubtitle: 'Swipe right on pets you love to connect with their owners!',
+          searchPlaceholder: 'Search conversations...',
+        };
+      default:
+        return {
+          color: '#F97316',
+          emptyTitle: 'No matches yet',
+          emptySubtitle: 'Find pet lovers to connect with for walks, hosting, and more!',
+          searchPlaceholder: 'Search conversations...',
+        };
     }
   };
 
-  const filteredProviders = getContactsList();
+  const roleConfig = getRoleConfig();
 
-  const getProviderIcon = (type: string) => {
-    switch (type) {
-      case 'vet': return 'medical';
-      case 'groomer': return 'cut';
-      case 'supplier': return 'storefront';
-      case 'lover': return 'heart';
-      case 'owner': return 'paw';
-      default: return 'person';
+  // Process navigation params IMMEDIATELY when screen focuses
+  useFocusEffect(
+    useCallback(() => {
+      const params = route.params || {};
+      const { conversationId, matchedUser, petName, petId } = params;
+
+      logger.log('MessagesScreen focused');
+      logger.log('Params received');
+
+      // Only process if we have matchedUser and haven't processed this exact params
+      const paramsKey = matchedUser ? `${matchedUser.id}-${conversationId}` : null;
+
+      if (matchedUser && paramsKey && paramsProcessedRef.current !== paramsKey) {
+        paramsProcessedRef.current = paramsKey;
+
+        logger.log('Opening chat with matched user');
+
+        // IMMEDIATELY create and set the conversation - no waiting!
+        const newConversation: Conversation = {
+          id: conversationId || `new-${matchedUser.id}`,
+          name: matchedUser.name || 'New Match',
+          lastMessage: '',
+          time: 'Just now',
+          unread: 0,
+          avatar: getAvatarEmoji(matchedUser.type || 'lover'),
+          online: matchedUser.online ?? true,
+          recipientId: matchedUser.id,
+          petName,
+          petId,
+        };
+
+        // Set conversation IMMEDIATELY
+        setSelectedConversation(newConversation);
+        setMessages([]);
+        setLoadingMessages(false);
+        setInitialized(true);
+
+        // Clear navigation params
+        navigation.setParams({
+          conversationId: undefined,
+          matchedUser: undefined,
+          petName: undefined,
+          petId: undefined,
+        });
+
+        // Try to create real conversation in background
+        if (!conversationId || conversationId.startsWith('new-')) {
+          createConversationInBackground(matchedUser.id, newConversation);
+        }
+      } else if (!initialized && !matchedUser) {
+        // No params, load conversations list
+        setInitialized(true);
+        loadConversations();
+      }
+    }, [route.params])
+  );
+
+  // Create conversation in background (don't block UI)
+  const createConversationInBackground = async (userId: string, currentConv: Conversation) => {
+    try {
+      logger.log('Creating conversation in background');
+      const response = await likesApi.createConversation(userId);
+      const newId = response.conversationId || response.conversation?.id || response.id;
+
+      if (newId && newId !== currentConv.id) {
+        logger.log('Got real conversation ID');
+        setSelectedConversation(prev => prev ? { ...prev, id: newId } : null);
+      }
+    } catch (error) {
+      logger.log('Background conversation creation failed (using temp)');
     }
   };
 
-  const getProviderColor = (type: string) => {
-    switch (type) {
-      case 'vet': return '#10B981';
-      case 'groomer': return '#8B5CF6';
-      case 'supplier': return '#3B82F6';
-      case 'lover': return '#EC4899';
-      case 'owner': return '#F59E0B';
-      default: return colors.primary;
-    }
-  };
-
-  const startConversation = (provider: Provider) => {
-    // Create a new conversation with the provider
-    const newConversation: Conversation = {
-      id: `conv_${provider.id}_${Date.now()}`,
-      name: provider.name,
-      lastMessage: '',
-      time: 'Just now',
-      unread: 0,
-      avatar: getAvatarEmoji(provider.type),
-      online: provider.online,
-      recipientId: provider.id,
-    };
-
-    setConversations([newConversation, ...conversations]);
-    setSelectedConversation(newConversation);
-    setShowNewChatModal(false);
-  };
-
+  // Auto-refresh messages when in chat
   useEffect(() => {
-    loadConversations();
-  }, []);
-
-  useEffect(() => {
-    if (selectedConversation) {
+    if (selectedConversation && !selectedConversation.id.startsWith('new-')) {
       loadMessages(selectedConversation.id);
+
+      const interval = setInterval(() => {
+        if (!sending) {
+          loadMessages(selectedConversation.id, false);
+        }
+      }, 3000);
+
+      return () => clearInterval(interval);
     }
-  }, [selectedConversation]);
+  }, [selectedConversation?.id]);
 
   const loadConversations = async () => {
+    setLoading(true);
     try {
       const data = await messagesApi.getConversations();
       const convos = (data.conversations || data || []).map((c: any) => ({
@@ -163,27 +216,37 @@ export default function MessagesScreen() {
       }));
       setConversations(convos);
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      logger.error('Failed to load conversations');
+      setConversations([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const loadMessages = async (conversationId: string) => {
-    setLoadingMessages(true);
+  const loadMessages = async (conversationId: string, showLoading = true) => {
+    if (conversationId.startsWith('new-')) {
+      setMessages([]);
+      setLoadingMessages(false);
+      return;
+    }
+
+    if (showLoading && messages.length === 0) {
+      setLoadingMessages(true);
+    }
+
     try {
       const data = await messagesApi.getMessages(conversationId);
       const msgs = (data.messages || data || []).map((m: any) => ({
         id: m.id,
         text: m.content || m.text,
-        sent: m.sent || m.isOwn || false,
+        sent: m.sent || m.isOwn || m.senderId === user?.id || false,
         time: formatMessageTime(m.createdAt),
       }));
       setMessages(msgs);
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 100);
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error) {
-      console.error('Failed to load messages:', error);
+      logger.error('Failed to load messages');
     } finally {
       setLoadingMessages(false);
     }
@@ -198,6 +261,7 @@ export default function MessagesScreen() {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
+    if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays === 1) return 'Yesterday';
@@ -213,9 +277,10 @@ export default function MessagesScreen() {
     switch (type?.toLowerCase()) {
       case 'vet': return '👩‍⚕️';
       case 'groomer': return '✂️';
-      case 'lover': return '🚶';
+      case 'lover': return '🐾';
       case 'supplier': return '🏪';
-      default: return '👤';
+      case 'owner': return '🏠';
+      default: return '💬';
     }
   };
 
@@ -234,25 +299,61 @@ export default function MessagesScreen() {
       time: 'Sending...',
     };
 
-    setMessages([...messages, tempMessage]);
+    setMessages(prev => [...prev, tempMessage]);
     const messageToSend = messageText;
     setMessageText('');
     setSending(true);
 
     try {
-      await messagesApi.sendMessage(selectedConversation.id, messageToSend);
-      tempMessage.time = 'Just now';
-      setMessages(prev => prev.map(m => m.id === tempMessage.id ? tempMessage : m));
+      const recipientId = selectedConversation.recipientId || selectedConversation.id.replace('new-', '');
+
+      if (selectedConversation.id.startsWith('new-')) {
+        logger.log('Starting new conversation with recipient:', recipientId);
+
+        const response = await messagesApi.startConversation(recipientId, messageToSend);
+        const newConvId = response.conversationId || response.conversation?.id || response.id;
+
+        logger.log('New conversation created:', newConvId);
+
+        if (newConvId) {
+          setSelectedConversation(prev => prev ? { ...prev, id: newConvId } : null);
+          // Reload messages to get the server's version
+          setTimeout(() => loadMessages(newConvId), 500);
+        }
+      } else {
+        logger.log('Sending message to conversation:', selectedConversation.id, 'recipient:', recipientId);
+        await messagesApi.sendMessage(selectedConversation.id, messageToSend, recipientId);
+        // Reload messages to get the server's version with proper timestamps
+        setTimeout(() => loadMessages(selectedConversation.id, false), 500);
+      }
+
+      setMessages(prev => prev.map(m =>
+        m.id === tempMessage.id ? { ...m, time: 'Just now' } : m
+      ));
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (error) {
-      console.error('Failed to send message:', error);
+    } catch (error: any) {
+      logger.error('Failed to send message:', error?.message || error);
       setMessages(prev => prev.filter(m => m.id !== tempMessage.id));
       setMessageText(messageToSend);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
       setSending(false);
     }
   };
 
+  const handleScheduleWalk = () => {
+    setMessageText(`🚶 Walk Request\n\nI'd like to schedule a walk!\n\nPlease let me know your availability.`);
+  };
+
+  const handleScheduleHosting = () => {
+    setMessageText(`🏠 Hosting Request\n\nI'd like to schedule pet hosting!\n\nPlease let me know your availability and rates.`);
+  };
+
+  const filteredConversations = conversations.filter(c =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // ============ CHAT VIEW ============
   if (selectedConversation) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -264,7 +365,11 @@ export default function MessagesScreen() {
           <View style={styles.chatHeader}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => setSelectedConversation(null)}
+              onPress={() => {
+                setSelectedConversation(null);
+                paramsProcessedRef.current = null;
+                loadConversations();
+              }}
             >
               <Ionicons name="arrow-back" size={24} color={colors.gray[700]} />
             </TouchableOpacity>
@@ -275,9 +380,13 @@ export default function MessagesScreen() {
               </View>
               <View>
                 <Text style={styles.chatName}>{selectedConversation.name}</Text>
-                <Text style={styles.chatStatus}>
-                  {selectedConversation.online ? 'Online' : 'Offline'}
-                </Text>
+                {selectedConversation.petName ? (
+                  <Text style={styles.chatPetName}>About {selectedConversation.petName}</Text>
+                ) : (
+                  <Text style={styles.chatStatus}>
+                    {selectedConversation.online ? 'Online' : 'Offline'}
+                  </Text>
+                )}
               </View>
             </View>
             <TouchableOpacity style={styles.callButton}>
@@ -298,35 +407,49 @@ export default function MessagesScreen() {
               </View>
             ) : messages.length === 0 ? (
               <View style={styles.emptyMessages}>
-                <Ionicons name="chatbubble-outline" size={48} color={colors.gray[300]} />
-                <Text style={styles.emptyText}>No messages yet</Text>
-                <Text style={styles.emptySubtext}>Start the conversation!</Text>
+                <Ionicons name="chatbubbles-outline" size={64} color={colors.gray[300]} />
+                <Text style={styles.emptyTitle}>Start the conversation!</Text>
+                <Text style={styles.emptySubtext}>
+                  Say hello to {selectedConversation.name}
+                </Text>
               </View>
             ) : (
               messages.map((message) => (
-              <View
-                key={message.id}
-                style={[
-                  styles.messageBubble,
-                  message.sent ? styles.sentBubble : styles.receivedBubble,
-                ]}
-              >
-                <Text style={[
-                  styles.messageText,
-                  message.sent ? styles.sentText : styles.receivedText,
-                ]}>
-                  {message.text}
-                </Text>
-                <Text style={[
-                  styles.messageTime,
-                  message.sent ? styles.sentTime : styles.receivedTime,
-                ]}>
-                  {message.time}
-                </Text>
-              </View>
-            ))
+                <View
+                  key={message.id}
+                  style={[
+                    styles.messageBubble,
+                    message.sent ? styles.sentBubble : styles.receivedBubble,
+                  ]}
+                >
+                  <Text style={[
+                    styles.messageText,
+                    message.sent ? styles.sentText : styles.receivedText,
+                  ]}>
+                    {message.text}
+                  </Text>
+                  <Text style={[
+                    styles.messageTime,
+                    message.sent ? styles.sentTime : styles.receivedTime,
+                  ]}>
+                    {message.time}
+                  </Text>
+                </View>
+              ))
             )}
           </ScrollView>
+
+          {/* Quick Actions */}
+          <View style={styles.quickActions}>
+            <TouchableOpacity style={styles.quickActionBtn} onPress={handleScheduleWalk}>
+              <Ionicons name="walk" size={18} color={colors.primary} />
+              <Text style={styles.quickActionText}>Schedule Walk</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionBtn} onPress={handleScheduleHosting}>
+              <Ionicons name="home" size={18} color={colors.primary} />
+              <Text style={styles.quickActionText}>Schedule Hosting</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Input */}
           <View style={styles.inputContainer}>
@@ -344,11 +467,15 @@ export default function MessagesScreen() {
               />
             </View>
             <TouchableOpacity
-              style={[styles.sendButton, !messageText.trim() && styles.sendButtonDisabled]}
+              style={[styles.sendButton, (!messageText.trim() || sending) && styles.sendButtonDisabled]}
               onPress={sendMessage}
-              disabled={!messageText.trim()}
+              disabled={!messageText.trim() || sending}
             >
-              <Ionicons name="send" size={20} color={colors.white} />
+              {sending ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Ionicons name="send" size={20} color={colors.white} />
+              )}
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -356,6 +483,7 @@ export default function MessagesScreen() {
     );
   }
 
+  // ============ LOADING STATE ============
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -367,179 +495,92 @@ export default function MessagesScreen() {
     );
   }
 
+  // ============ CONVERSATIONS LIST ============
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Messages</Text>
-        <TouchableOpacity style={styles.newChatButton} onPress={() => setShowNewChatModal(true)}>
-          <Ionicons name="create-outline" size={22} color={colors.gray[700]} />
-        </TouchableOpacity>
       </View>
 
-      {/* Search */}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color={colors.gray[400]} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search conversations..."
+          placeholder={roleConfig.searchPlaceholder}
           placeholderTextColor={colors.gray[400]}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
         />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={20} color={colors.gray[400]} />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Conversations */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        {conversations.length === 0 ? (
+        {filteredConversations.length === 0 ? (
           <View style={styles.emptyConversations}>
-            <Ionicons name="chatbubbles-outline" size={64} color={colors.gray[300]} />
-            <Text style={styles.emptyTitle}>No conversations yet</Text>
-            <Text style={styles.emptySubtitle}>Start chatting with vets, groomers, and more!</Text>
+            <Ionicons
+              name={isProvider ? "chatbubbles-outline" : "heart-outline"}
+              size={64}
+              color={colors.gray[300]}
+            />
+            <Text style={styles.emptyTitle}>
+              {searchQuery ? 'No results found' : roleConfig.emptyTitle}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {searchQuery ? 'Try a different search' : roleConfig.emptySubtitle}
+            </Text>
           </View>
         ) : (
-          conversations.map((conversation) => (
-          <TouchableOpacity
-            key={conversation.id}
-            style={styles.conversationCard}
-            onPress={() => setSelectedConversation(conversation)}
-          >
-            <View style={styles.avatarContainer}>
-              <Text style={styles.avatarEmoji}>{conversation.avatar}</Text>
-              {conversation.online && <View style={styles.onlineIndicator} />}
-            </View>
-            <View style={styles.conversationInfo}>
-              <View style={styles.conversationHeader}>
-                <Text style={styles.conversationName}>{conversation.name}</Text>
-                <Text style={styles.conversationTime}>{conversation.time}</Text>
+          filteredConversations.map((conversation) => (
+            <TouchableOpacity
+              key={conversation.id}
+              style={styles.conversationCard}
+              onPress={() => setSelectedConversation(conversation)}
+            >
+              <View style={styles.avatarContainer}>
+                <Text style={styles.avatarEmoji}>{conversation.avatar}</Text>
+                {conversation.online && <View style={styles.onlineIndicator} />}
               </View>
-              <View style={styles.conversationFooter}>
-                <Text
-                  style={[
-                    styles.lastMessage,
-                    conversation.unread > 0 && styles.unreadMessage,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {conversation.lastMessage}
-                </Text>
-                {conversation.unread > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadCount}>{conversation.unread}</Text>
-                  </View>
-                )}
+              <View style={styles.conversationInfo}>
+                <View style={styles.conversationHeader}>
+                  <Text style={styles.conversationName}>{conversation.name}</Text>
+                  <Text style={styles.conversationTime}>{conversation.time}</Text>
+                </View>
+                <View style={styles.conversationFooter}>
+                  <Text
+                    style={[styles.lastMessage, conversation.unread > 0 && styles.unreadMessage]}
+                    numberOfLines={1}
+                  >
+                    {conversation.lastMessage || 'Start chatting!'}
+                  </Text>
+                  {conversation.unread > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadCount}>{conversation.unread}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-        ))
+            </TouchableOpacity>
+          ))
         )}
       </ScrollView>
-
-      {/* New Chat Modal */}
-      <Modal visible={showNewChatModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Start a Chat</Text>
-              <TouchableOpacity onPress={() => setShowNewChatModal(false)}>
-                <Ionicons name="close" size={24} color={colors.gray[700]} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSubtitle}>
-              {isOwner
-                ? 'Chat with vets, groomers, suppliers, and pet lovers'
-                : 'Chat with pet owners and other service providers'}
-            </Text>
-
-            {/* Provider Type Filter */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-              {(isOwner ? [
-                { key: 'all', label: 'All', icon: 'apps' },
-                { key: 'vet', label: 'Vets', icon: 'medical' },
-                { key: 'groomer', label: 'Groomers', icon: 'cut' },
-                { key: 'supplier', label: 'Suppliers', icon: 'storefront' },
-                { key: 'lover', label: 'Pet Lovers', icon: 'heart' },
-              ] : [
-                { key: 'all', label: 'All', icon: 'apps' },
-                { key: 'owner', label: 'Pet Owners', icon: 'paw' },
-                { key: 'vet', label: 'Vets', icon: 'medical' },
-                { key: 'groomer', label: 'Groomers', icon: 'cut' },
-                { key: 'supplier', label: 'Suppliers', icon: 'storefront' },
-              ]).map((item) => (
-                <TouchableOpacity
-                  key={item.key}
-                  style={[
-                    styles.filterChip,
-                    providerFilter === item.key && styles.filterChipActive,
-                  ]}
-                  onPress={() => setProviderFilter(item.key as any)}
-                >
-                  <Ionicons
-                    name={item.icon as any}
-                    size={16}
-                    color={providerFilter === item.key ? colors.white : colors.gray[600]}
-                  />
-                  <Text style={[
-                    styles.filterChipText,
-                    providerFilter === item.key && styles.filterChipTextActive,
-                  ]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Providers List */}
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.providersList}>
-              {filteredProviders.map((provider) => (
-                <TouchableOpacity
-                  key={provider.id}
-                  style={styles.providerCard}
-                  onPress={() => startConversation(provider)}
-                >
-                  <View style={[
-                    styles.providerIcon,
-                    { backgroundColor: `${getProviderColor(provider.type)}15` }
-                  ]}>
-                    <Ionicons
-                      name={getProviderIcon(provider.type) as any}
-                      size={22}
-                      color={getProviderColor(provider.type)}
-                    />
-                    {provider.online && <View style={styles.providerOnlineDot} />}
-                  </View>
-                  <View style={styles.providerInfo}>
-                    <Text style={styles.providerName}>{provider.name}</Text>
-                    <Text style={styles.providerSpecialty}>{provider.specialty}</Text>
-                    <View style={styles.providerMeta}>
-                      <Ionicons name="star" size={12} color="#F59E0B" />
-                      <Text style={styles.providerRating}>{provider.rating}</Text>
-                      <Text style={styles.providerStatus}>
-                        {provider.online ? '• Online' : '• Offline'}
-                      </Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.chatBtn, { backgroundColor: getProviderColor(provider.type) }]}
-                    onPress={() => startConversation(provider)}
-                  >
-                    <Ionicons name="chatbubble" size={18} color={colors.white} />
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -555,23 +596,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyMessages: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.gray[700],
-  },
-  emptySubtext: {
-    marginTop: 4,
-    fontSize: 14,
-    color: colors.gray[500],
-  },
-  emptyConversations: {
-    padding: 60,
-    alignItems: 'center',
+    marginTop: 100,
   },
   emptyTitle: {
     marginTop: 16,
@@ -579,15 +608,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.gray[700],
   },
-  emptySubtitle: {
+  emptySubtext: {
     marginTop: 8,
     fontSize: 14,
     color: colors.gray[500],
     textAlign: 'center',
   },
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  emptyConversations: {
+    padding: 60,
+    alignItems: 'center',
+  },
+  emptySubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    color: colors.gray[500],
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   header: {
     flexDirection: 'row',
@@ -600,19 +636,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: colors.gray[900],
-  },
-  newChatButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -767,6 +790,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.gray[900],
   },
+  chatPetName: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '500',
+  },
   chatStatus: {
     fontSize: 12,
     color: colors.gray[500],
@@ -784,6 +812,7 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     padding: 16,
+    flexGrow: 1,
   },
   messageBubble: {
     maxWidth: '80%',
@@ -828,6 +857,29 @@ const styles = StyleSheet.create({
   receivedTime: {
     color: colors.gray[400],
   },
+  quickActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 12,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.gray[100],
+  },
+  quickActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: `${colors.primary}10`,
+    gap: 6,
+  },
+  quickActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -865,126 +917,5 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: colors.gray[300],
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.gray[900],
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: colors.gray[500],
-    marginBottom: 20,
-  },
-  filterScroll: {
-    marginBottom: 16,
-    marginHorizontal: -24,
-    paddingHorizontal: 24,
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: colors.gray[100],
-    marginRight: 8,
-    gap: 6,
-  },
-  filterChipActive: {
-    backgroundColor: colors.primary,
-  },
-  filterChipText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: colors.gray[600],
-  },
-  filterChipTextActive: {
-    color: colors.white,
-  },
-  providersList: {
-    maxHeight: 400,
-  },
-  providerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.gray[50],
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-  },
-  providerIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  providerOnlineDot: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#10B981',
-    borderWidth: 2,
-    borderColor: colors.white,
-  },
-  providerInfo: {
-    flex: 1,
-  },
-  providerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.gray[900],
-  },
-  providerSpecialty: {
-    fontSize: 13,
-    color: colors.gray[500],
-    marginTop: 2,
-  },
-  providerMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    gap: 4,
-  },
-  providerRating: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.gray[700],
-  },
-  providerStatus: {
-    fontSize: 12,
-    color: colors.gray[500],
-    marginLeft: 4,
-  },
-  chatBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

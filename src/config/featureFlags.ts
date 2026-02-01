@@ -1,16 +1,15 @@
 // Feature Flags Configuration
-// Set to true to show feature in UI, false to hide
-// Currently configured for Pet Owner & Pet Lover only
+// All roles and features enabled for full app experience
 
 export const FEATURES = {
   // ============================================
-  // ENABLED FEATURES (Visible to users)
+  // CORE FEATURES (All roles)
   // ============================================
 
   // Auth & Onboarding
   LOGIN: true,
   ONBOARDING: true,
-  ROLE_SELECTION: true,  // Only shows Owner & Lover
+  ROLE_SELECTION: true,
 
   // Core Features
   HOME: true,
@@ -23,40 +22,40 @@ export const FEATURES = {
   PETS: true,
 
   // Pet Lover Features
-  PET_MATCH: true,  // Bumble-style swipe matching
+  PET_MATCH: true,
 
   // ============================================
-  // DISABLED FEATURES (Hidden - ready for later)
+  // PROVIDER FEATURES (Vet, Groomer, Supplier)
   // ============================================
 
-  // Pet Care (Phase 2)
-  PET_CARE_TIPS: false,
+  // Pet Care
+  PET_CARE_TIPS: true,
 
-  // Booking & Orders (Phase 2)
-  BOOKING: false,
-  ORDERS: false,
-  APPOINTMENTS: false,
-  CALENDAR: false,
+  // Booking & Orders
+  BOOKING: true,
+  ORDERS: true,
+  APPOINTMENTS: true,
+  CALENDAR: true,
 
-  // Provider Features (Phase 3 - Vet, Groomer, Supplier)
-  DASHBOARD: false,
-  PROVIDER_LISTINGS: false,
-  PROVIDER_PROFILE: false,
-  EARNINGS: false,
-  ANALYTICS: false,
-  INVENTORY: false,
-  ADD_PRODUCT: false,
+  // Provider Features
+  DASHBOARD: true,
+  PROVIDER_LISTINGS: true,
+  PROVIDER_PROFILE: true,
+  EARNINGS: true,
+  ANALYTICS: true,
+  INVENTORY: true,
+  ADD_PRODUCT: true,
 
   // Communication
-  MESSAGES: true,  // Enabled for Bumble-style chat
-  NOTIFICATIONS: false,
+  MESSAGES: true,
+  NOTIFICATIONS: true,
 
-  // Verification (Phase 2)
-  AADHAAR_VERIFICATION: false,
+  // Verification
+  AADHAAR_VERIFICATION: true,
 } as const;
 
-// Available roles for this version
-export const ENABLED_ROLES = ['OWNER', 'LOVER'] as const;
+// All roles enabled
+export const ENABLED_ROLES = ['OWNER', 'LOVER', 'VET', 'GROOMER', 'SUPPLIER'] as const;
 
 // Helper function to check if a feature is enabled
 export const isFeatureEnabled = (feature: keyof typeof FEATURES): boolean => {

@@ -30,7 +30,7 @@ export default function AnalyticsScreen() {
       case 'SUPPLIER':
         return { color: '#3B82F6', title: 'Store Analytics' };
       case 'LOVER':
-        return { color: '#EC4899', title: 'My Analytics' };
+        return { color: '#F97316', title: 'My Analytics' };
       default:
         return { color: colors.primary, title: 'Analytics' };
     }

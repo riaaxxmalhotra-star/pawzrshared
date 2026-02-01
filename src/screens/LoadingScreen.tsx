@@ -1,13 +1,12 @@
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme/colors';
 
 export default function LoadingScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.logoContainer}>
-        <Ionicons name="paw" size={60} color={colors.primary} />
+        <Text style={styles.pawEmoji}>🐾</Text>
       </View>
       <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
     </View>
@@ -29,6 +28,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
+  },
+  pawEmoji: {
+    fontSize: 50,
   },
   loader: {
     marginTop: 20,

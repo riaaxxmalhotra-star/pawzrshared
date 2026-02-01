@@ -21,6 +21,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../../lib/auth';
 import { colors } from '../../theme/colors';
 import PromptSelector from '../../components/PromptSelector';
+import logger from '../../lib/logger';
 
 interface SelectedPrompt {
   promptId: string;
@@ -107,7 +108,7 @@ export default function PetLoverOnboardingScreen() {
           setState(postOffice.State || '');
         }
       } catch (error) {
-        console.log('Pincode lookup failed:', error);
+        logger.log('Pincode lookup failed:', error);
       } finally {
         setIsPincodeLoading(false);
       }
@@ -184,7 +185,7 @@ export default function PetLoverOnboardingScreen() {
         routes: [{ name: 'Main' }],
       });
     } catch (error) {
-      console.error('Error saving profile:', error);
+      logger.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
       setIsLoading(false);

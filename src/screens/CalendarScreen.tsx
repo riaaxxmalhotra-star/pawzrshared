@@ -9,12 +9,18 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 import { bookingsApi } from '../lib/api';
+import logger from '../lib/logger';
+
+const { width } = Dimensions.get('window');
+const CALENDAR_PADDING = 24;
+const DAY_SIZE = (width - CALENDAR_PADDING * 2 - 32) / 7;
 
 interface Booking {
   id: string;
@@ -35,7 +41,7 @@ interface DayBookings {
   [date: string]: Booking[];
 }
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -57,13 +63,13 @@ export default function CalendarScreen() {
   const getRoleConfig = () => {
     switch (userRole) {
       case 'VET':
-        return { color: '#10B981', title: 'Appointments' };
+        return { color: '#10B981', title: 'Appointments', icon: 'medical' };
       case 'GROOMER':
-        return { color: '#8B5CF6', title: 'Appointments' };
+        return { color: '#8B5CF6', title: 'Appointments', icon: 'cut' };
       case 'LOVER':
-        return { color: '#EC4899', title: 'My Schedule' };
+        return { color: '#F97316', title: 'My Schedule', icon: 'heart' };
       default:
-        return { color: colors.primary, title: 'Calendar' };
+        return { color: colors.primary, title: 'Calendar', icon: 'calendar' };
     }
   };
 
@@ -75,11 +81,7 @@ export default function CalendarScreen() {
 
   const loadBookings = async () => {
     try {
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth();
       const data = await bookingsApi.getMyBookings();
-
-      // Group bookings by date
       const grouped: DayBookings = {};
       const bookingsList = data.bookings || data || [];
 
@@ -106,8 +108,7 @@ export default function CalendarScreen() {
 
       setBookings(grouped);
     } catch (error) {
-      console.error('Failed to load bookings:', error);
-      // Use mock data for demo
+      logger.error('Failed to load bookings:', error);
       setBookings(getMockBookings());
     } finally {
       setLoading(false);
@@ -199,7 +200,7 @@ export default function CalendarScreen() {
           duration: userRole === 'LOVER' ? 720 : 60,
           status: 'confirmed',
           price: userRole === 'LOVER' ? 1500 : 1200,
-          notes: userRole === 'LOVER' ? 'Overnight care - pickup at 8 PM, drop at 8 AM' : undefined,
+          notes: userRole === 'LOVER' ? 'Overnight care' : undefined,
         },
       ],
       [formatDate(dayAfter)]: [
@@ -231,7 +232,6 @@ export default function CalendarScreen() {
           duration: userRole === 'LOVER' ? 480 : 45,
           status: 'confirmed',
           price: userRole === 'LOVER' ? 1200 : 1500,
-          notes: userRole === 'LOVER' ? 'Full day care while owner is at work' : undefined,
         },
       ],
     };
@@ -251,17 +251,12 @@ export default function CalendarScreen() {
     const startDayOfWeek = firstDay.getDay();
 
     const days: (number | null)[] = [];
-
-    // Add empty slots for days before the first day of the month
     for (let i = 0; i < startDayOfWeek; i++) {
       days.push(null);
     }
-
-    // Add all days of the month
     for (let i = 1; i <= daysInMonth; i++) {
       days.push(i);
     }
-
     return days;
   };
 
@@ -292,6 +287,13 @@ export default function CalendarScreen() {
       currentDate.getMonth() === selectedDate.getMonth() &&
       currentDate.getFullYear() === selectedDate.getFullYear()
     );
+  };
+
+  const isPast = (day: number) => {
+    const today = new Date();
+    const checkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    today.setHours(0, 0, 0, 0);
+    return checkDate < today;
   };
 
   const selectDay = (day: number) => {
@@ -325,12 +327,9 @@ export default function CalendarScreen() {
 
   const handleAcceptBooking = async () => {
     if (!selectedBooking) return;
-
     setProcessingAction(true);
     try {
       await bookingsApi.updateBooking(selectedBooking.id, { status: 'confirmed' });
-
-      // Update local state
       const dateKey = selectedBooking.date;
       setBookings(prev => ({
         ...prev,
@@ -338,11 +337,9 @@ export default function CalendarScreen() {
           b.id === selectedBooking.id ? { ...b, status: 'confirmed' as const } : b
         ),
       }));
-
       setShowBookingModal(false);
       Alert.alert('Success', 'Booking confirmed!');
     } catch (error) {
-      // Update locally for demo
       const dateKey = selectedBooking.date;
       setBookings(prev => ({
         ...prev,
@@ -358,51 +355,41 @@ export default function CalendarScreen() {
 
   const handleDeclineBooking = async () => {
     if (!selectedBooking) return;
-
-    Alert.alert(
-      'Decline Booking',
-      'Are you sure you want to decline this booking?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            setProcessingAction(true);
-            try {
-              await bookingsApi.updateBooking(selectedBooking.id, { status: 'cancelled' });
-
-              const dateKey = selectedBooking.date;
-              setBookings(prev => ({
-                ...prev,
-                [dateKey]: prev[dateKey].filter(b => b.id !== selectedBooking.id),
-              }));
-
-              setShowBookingModal(false);
-              Alert.alert('Declined', 'Booking has been declined.');
-            } catch (error) {
-              const dateKey = selectedBooking.date;
-              setBookings(prev => ({
-                ...prev,
-                [dateKey]: prev[dateKey].filter(b => b.id !== selectedBooking.id),
-              }));
-              setShowBookingModal(false);
-            } finally {
-              setProcessingAction(false);
-            }
-          },
+    Alert.alert('Decline Booking', 'Are you sure you want to decline this booking?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Decline',
+        style: 'destructive',
+        onPress: async () => {
+          setProcessingAction(true);
+          try {
+            await bookingsApi.updateBooking(selectedBooking.id, { status: 'cancelled' });
+            const dateKey = selectedBooking.date;
+            setBookings(prev => ({
+              ...prev,
+              [dateKey]: prev[dateKey].filter(b => b.id !== selectedBooking.id),
+            }));
+            setShowBookingModal(false);
+          } catch (error) {
+            const dateKey = selectedBooking.date;
+            setBookings(prev => ({
+              ...prev,
+              [dateKey]: prev[dateKey].filter(b => b.id !== selectedBooking.id),
+            }));
+            setShowBookingModal(false);
+          } finally {
+            setProcessingAction(false);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleCompleteBooking = async () => {
     if (!selectedBooking) return;
-
     setProcessingAction(true);
     try {
       await bookingsApi.updateBooking(selectedBooking.id, { status: 'completed' });
-
       const dateKey = selectedBooking.date;
       setBookings(prev => ({
         ...prev,
@@ -410,7 +397,6 @@ export default function CalendarScreen() {
           b.id === selectedBooking.id ? { ...b, status: 'completed' as const } : b
         ),
       }));
-
       setShowBookingModal(false);
       Alert.alert('Success', 'Booking marked as completed!');
     } catch (error) {
@@ -429,31 +415,21 @@ export default function CalendarScreen() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-        return '#F59E0B';
-      case 'confirmed':
-        return '#10B981';
-      case 'completed':
-        return '#6B7280';
-      case 'cancelled':
-        return '#EF4444';
-      default:
-        return colors.gray[500];
+      case 'pending': return '#F59E0B';
+      case 'confirmed': return '#10B981';
+      case 'completed': return '#6B7280';
+      case 'cancelled': return '#EF4444';
+      default: return colors.gray[500];
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'pending':
-        return 'time';
-      case 'confirmed':
-        return 'checkmark-circle';
-      case 'completed':
-        return 'checkmark-done';
-      case 'cancelled':
-        return 'close-circle';
-      default:
-        return 'ellipse';
+      case 'pending': return 'time';
+      case 'confirmed': return 'checkmark-circle';
+      case 'completed': return 'checkmark-done';
+      case 'cancelled': return 'close-circle';
+      default: return 'ellipse';
     }
   };
 
@@ -462,18 +438,14 @@ export default function CalendarScreen() {
     : [];
 
   const days = getDaysInMonth(currentDate);
-
-  // Stats
   const allBookings = Object.values(bookings).flat();
   const pendingCount = allBookings.filter(b => b.status === 'pending').length;
-  const todayCount = bookings[new Date().toISOString().split('T')[0]]?.length || 0;
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={config.color} />
-          <Text style={styles.loadingText}>Loading calendar...</Text>
         </View>
       </SafeAreaView>
     );
@@ -487,50 +459,46 @@ export default function CalendarScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={config.color} />
         }
       >
-        {/* Header */}
+        {/* Clean Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>{config.title}</Text>
-          <TouchableOpacity style={styles.todayBtn} onPress={goToToday}>
+          <View>
+            <Text style={styles.headerTitle}>{config.title}</Text>
+            {pendingCount > 0 && (
+              <Text style={styles.headerSubtitle}>{pendingCount} pending request{pendingCount > 1 ? 's' : ''}</Text>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.todayBtn, { backgroundColor: `${config.color}12` }]}
+            onPress={goToToday}
+          >
             <Text style={[styles.todayBtnText, { color: config.color }]}>Today</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, { borderLeftColor: config.color }]}>
-            <Text style={styles.statValue}>{todayCount}</Text>
-            <Text style={styles.statLabel}>Today</Text>
-          </View>
-          <View style={[styles.statCard, { borderLeftColor: '#F59E0B' }]}>
-            <Text style={styles.statValue}>{pendingCount}</Text>
-            <Text style={styles.statLabel}>Pending</Text>
-          </View>
-          <View style={[styles.statCard, { borderLeftColor: '#10B981' }]}>
-            <Text style={styles.statValue}>{allBookings.filter(b => b.status === 'confirmed').length}</Text>
-            <Text style={styles.statLabel}>Confirmed</Text>
-          </View>
-        </View>
-
-        {/* Month Navigation */}
+        {/* Elegant Month Navigation */}
         <View style={styles.monthNav}>
           <TouchableOpacity onPress={goToPrevMonth} style={styles.navBtn}>
-            <Ionicons name="chevron-back" size={24} color={colors.gray[700]} />
+            <Ionicons name="chevron-back" size={20} color={colors.gray[600]} />
           </TouchableOpacity>
-          <Text style={styles.monthTitle}>
-            {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
-          </Text>
+          <View style={styles.monthTitleContainer}>
+            <Text style={styles.monthTitle}>{MONTHS[currentDate.getMonth()]}</Text>
+            <Text style={styles.yearTitle}>{currentDate.getFullYear()}</Text>
+          </View>
           <TouchableOpacity onPress={goToNextMonth} style={styles.navBtn}>
-            <Ionicons name="chevron-forward" size={24} color={colors.gray[700]} />
+            <Ionicons name="chevron-forward" size={20} color={colors.gray[600]} />
           </TouchableOpacity>
         </View>
 
-        {/* Calendar */}
-        <View style={styles.calendar}>
+        {/* Premium Calendar */}
+        <View style={styles.calendarContainer}>
           {/* Day headers */}
           <View style={styles.weekHeader}>
-            {DAYS.map(day => (
-              <View key={day} style={styles.dayHeaderCell}>
-                <Text style={styles.dayHeaderText}>{day}</Text>
+            {DAYS.map((day, index) => (
+              <View key={index} style={styles.dayHeaderCell}>
+                <Text style={[
+                  styles.dayHeaderText,
+                  (index === 0 || index === 6) && styles.weekendText
+                ]}>{day}</Text>
               </View>
             ))}
           </View>
@@ -545,42 +513,36 @@ export default function CalendarScreen() {
               const dayBookings = getBookingsForDay(day);
               const hasBookings = dayBookings.length > 0;
               const hasPending = dayBookings.some(b => b.status === 'pending');
+              const hasConfirmed = dayBookings.some(b => b.status === 'confirmed');
+              const past = isPast(day);
 
               return (
                 <TouchableOpacity
                   key={day}
-                  style={[
-                    styles.dayCell,
-                    isToday(day) && styles.todayCell,
-                    isSelected(day) && [styles.selectedCell, { backgroundColor: config.color }],
-                  ]}
+                  style={styles.dayCell}
                   onPress={() => selectDay(day)}
+                  activeOpacity={0.7}
                 >
-                  <Text
-                    style={[
+                  <View style={[
+                    styles.dayInner,
+                    isToday(day) && !isSelected(day) && styles.todayCell,
+                    isSelected(day) && [styles.selectedCell, { backgroundColor: config.color }],
+                  ]}>
+                    <Text style={[
                       styles.dayText,
-                      isToday(day) && !isSelected(day) && { color: config.color, fontWeight: '700' },
+                      past && !isSelected(day) && styles.pastDayText,
+                      isToday(day) && !isSelected(day) && [styles.todayText, { color: config.color }],
                       isSelected(day) && styles.selectedDayText,
-                    ]}
-                  >
-                    {day}
-                  </Text>
-                  {hasBookings && (
-                    <View style={styles.bookingIndicators}>
-                      <View
-                        style={[
-                          styles.bookingDot,
-                          { backgroundColor: hasPending ? '#F59E0B' : '#10B981' },
-                        ]}
-                      />
-                      {dayBookings.length > 1 && (
-                        <View
-                          style={[
-                            styles.bookingDot,
-                            { backgroundColor: config.color },
-                          ]}
-                        />
-                      )}
+                    ]}>
+                      {day}
+                    </Text>
+                  </View>
+                  {hasBookings && !isSelected(day) && (
+                    <View style={styles.bookingIndicator}>
+                      <View style={[
+                        styles.indicatorDot,
+                        { backgroundColor: hasPending ? '#F59E0B' : hasConfirmed ? '#10B981' : colors.gray[400] }
+                      ]} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -589,64 +551,73 @@ export default function CalendarScreen() {
           </View>
         </View>
 
-        {/* Selected Day Bookings */}
+        {/* Selected Day Section */}
         <View style={styles.bookingsSection}>
-          <Text style={styles.sectionTitle}>
-            {selectedDate
-              ? selectedDate.toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                })
-              : 'Select a date'}
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionDate}>
+              {selectedDate?.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </Text>
+            {selectedDayBookings.length > 0 && (
+              <View style={[styles.countBadge, { backgroundColor: `${config.color}15` }]}>
+                <Text style={[styles.countText, { color: config.color }]}>
+                  {selectedDayBookings.length}
+                </Text>
+              </View>
+            )}
+          </View>
 
           {selectedDayBookings.length === 0 ? (
-            <View style={styles.emptyDay}>
-              <Ionicons name="calendar-outline" size={48} color={colors.gray[300]} />
-              <Text style={styles.emptyDayText}>No bookings for this day</Text>
-              <Text style={styles.emptyDaySubtext}>
-                Your schedule is free!
-              </Text>
+            <View style={styles.emptyState}>
+              <View style={[styles.emptyIconContainer, { backgroundColor: `${config.color}10` }]}>
+                <Ionicons name="calendar-outline" size={28} color={config.color} />
+              </View>
+              <Text style={styles.emptyTitle}>No appointments</Text>
+              <Text style={styles.emptySubtitle}>Your schedule is clear for this day</Text>
             </View>
           ) : (
-            selectedDayBookings.map((booking) => (
-              <TouchableOpacity
-                key={booking.id}
-                style={styles.bookingCard}
-                onPress={() => openBookingDetails(booking)}
-              >
-                <View style={styles.bookingTime}>
-                  <Text style={styles.timeText}>{booking.time}</Text>
-                  <Text style={styles.durationText}>{booking.duration} min</Text>
-                </View>
-                <View style={styles.bookingDivider} />
-                <View style={styles.bookingDetails}>
-                  <View style={styles.bookingHeader}>
-                    <Text style={styles.customerName}>{booking.customerName}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(booking.status)}15` }]}>
-                      <Ionicons
-                        name={getStatusIcon(booking.status) as any}
-                        size={12}
-                        color={getStatusColor(booking.status)}
-                      />
-                      <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
-                        {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                      </Text>
+            <View style={styles.bookingsList}>
+              {selectedDayBookings.map((booking, index) => (
+                <TouchableOpacity
+                  key={booking.id}
+                  style={[
+                    styles.bookingCard,
+                    index === selectedDayBookings.length - 1 && { marginBottom: 0 }
+                  ]}
+                  onPress={() => openBookingDetails(booking)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.timeStrip, { backgroundColor: getStatusColor(booking.status) }]} />
+                  <View style={styles.bookingContent}>
+                    <View style={styles.bookingTop}>
+                      <Text style={styles.bookingTime}>{booking.time}</Text>
+                      <View style={[styles.statusPill, { backgroundColor: `${getStatusColor(booking.status)}15` }]}>
+                        <View style={[styles.statusDot, { backgroundColor: getStatusColor(booking.status) }]} />
+                        <Text style={[styles.statusLabel, { color: getStatusColor(booking.status) }]}>
+                          {booking.status}
+                        </Text>
+                      </View>
                     </View>
+                    <Text style={styles.bookingCustomer}>{booking.customerName}</Text>
+                    <View style={styles.bookingMeta}>
+                      <View style={styles.metaItem}>
+                        <Ionicons name="paw" size={12} color={colors.gray[400]} />
+                        <Text style={styles.metaText}>{booking.petName}</Text>
+                      </View>
+                      <View style={styles.metaDivider} />
+                      <Text style={styles.metaText}>{booking.service}</Text>
+                    </View>
+                    <Text style={[styles.bookingPrice, { color: config.color }]}>
+                      ₹{booking.price.toLocaleString()}
+                    </Text>
                   </View>
-                  <View style={styles.petInfo}>
-                    <Ionicons name="paw" size={14} color={colors.gray[400]} />
-                    <Text style={styles.petText}>{booking.petName} ({booking.petType})</Text>
-                  </View>
-                  <Text style={styles.serviceText}>{booking.service}</Text>
-                  <Text style={[styles.priceText, { color: config.color }]}>
-                    ₹{booking.price.toLocaleString()}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
-              </TouchableOpacity>
-            ))
+                  <Ionicons name="chevron-forward" size={18} color={colors.gray[300]} />
+                </TouchableOpacity>
+              ))}
+            </View>
           )}
         </View>
 
@@ -657,145 +628,139 @@ export default function CalendarScreen() {
       <Modal visible={showBookingModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Booking Details</Text>
-              <TouchableOpacity onPress={() => setShowBookingModal(false)}>
-                <Ionicons name="close" size={24} color={colors.gray[700]} />
+              <TouchableOpacity
+                onPress={() => setShowBookingModal(false)}
+                style={styles.closeBtn}
+              >
+                <Ionicons name="close" size={20} color={colors.gray[600]} />
               </TouchableOpacity>
             </View>
 
             {selectedBooking && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Status Banner */}
-                <View style={[styles.statusBanner, { backgroundColor: `${getStatusColor(selectedBooking.status)}15` }]}>
+                {/* Status */}
+                <View style={[styles.statusCard, { backgroundColor: `${getStatusColor(selectedBooking.status)}10` }]}>
                   <Ionicons
                     name={getStatusIcon(selectedBooking.status) as any}
-                    size={20}
+                    size={18}
                     color={getStatusColor(selectedBooking.status)}
                   />
-                  <Text style={[styles.statusBannerText, { color: getStatusColor(selectedBooking.status) }]}>
+                  <Text style={[styles.statusCardText, { color: getStatusColor(selectedBooking.status) }]}>
                     {selectedBooking.status.charAt(0).toUpperCase() + selectedBooking.status.slice(1)}
                   </Text>
                 </View>
 
-                {/* Customer Info */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Customer</Text>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="person" size={18} color={colors.gray[500]} />
-                    <Text style={styles.detailText}>{selectedBooking.customerName}</Text>
+                {/* Info Cards */}
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoCard}>
+                    <Ionicons name="person-outline" size={18} color={colors.gray[400]} />
+                    <Text style={styles.infoLabel}>Customer</Text>
+                    <Text style={styles.infoValue}>{selectedBooking.customerName}</Text>
+                    {selectedBooking.customerPhone && (
+                      <Text style={[styles.infoLink, { color: config.color }]}>{selectedBooking.customerPhone}</Text>
+                    )}
                   </View>
-                  {selectedBooking.customerPhone && (
-                    <TouchableOpacity style={styles.detailRow}>
-                      <Ionicons name="call" size={18} color={config.color} />
-                      <Text style={[styles.detailText, { color: config.color }]}>
-                        {selectedBooking.customerPhone}
+                  <View style={styles.infoCard}>
+                    <Ionicons name="paw-outline" size={18} color={colors.gray[400]} />
+                    <Text style={styles.infoLabel}>Pet</Text>
+                    <Text style={styles.infoValue}>{selectedBooking.petName}</Text>
+                    <Text style={styles.infoSubvalue}>{selectedBooking.petType}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.detailCard}>
+                  <View style={styles.detailRow}>
+                    <Ionicons name="calendar-outline" size={18} color={colors.gray[400]} />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Date</Text>
+                      <Text style={styles.detailValue}>
+                        {new Date(selectedBooking.date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          month: 'long',
+                          day: 'numeric',
+                        })}
                       </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Pet Info */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Pet</Text>
+                    </View>
+                  </View>
+                  <View style={styles.detailDivider} />
                   <View style={styles.detailRow}>
-                    <Ionicons name="paw" size={18} color={colors.gray[500]} />
-                    <Text style={styles.detailText}>
-                      {selectedBooking.petName} ({selectedBooking.petType})
-                    </Text>
+                    <Ionicons name="time-outline" size={18} color={colors.gray[400]} />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Time</Text>
+                      <Text style={styles.detailValue}>
+                        {selectedBooking.time} • {selectedBooking.duration} min
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.detailDivider} />
+                  <View style={styles.detailRow}>
+                    <Ionicons name="briefcase-outline" size={18} color={colors.gray[400]} />
+                    <View style={styles.detailContent}>
+                      <Text style={styles.detailLabel}>Service</Text>
+                      <Text style={styles.detailValue}>{selectedBooking.service}</Text>
+                    </View>
                   </View>
                 </View>
 
-                {/* Appointment Info */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>Appointment</Text>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="calendar" size={18} color={colors.gray[500]} />
-                    <Text style={styles.detailText}>
-                      {new Date(selectedBooking.date).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="time" size={18} color={colors.gray[500]} />
-                    <Text style={styles.detailText}>
-                      {selectedBooking.time} ({selectedBooking.duration} minutes)
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Ionicons name="medkit" size={18} color={colors.gray[500]} />
-                    <Text style={styles.detailText}>{selectedBooking.service}</Text>
-                  </View>
-                </View>
-
-                {/* Notes */}
                 {selectedBooking.notes && (
-                  <View style={styles.detailSection}>
-                    <Text style={styles.detailSectionTitle}>Notes</Text>
-                    <Text style={styles.notesText}>{selectedBooking.notes}</Text>
+                  <View style={styles.notesCard}>
+                    <Text style={styles.notesLabel}>Notes</Text>
+                    <Text style={styles.notesValue}>{selectedBooking.notes}</Text>
                   </View>
                 )}
 
                 {/* Price */}
-                <View style={styles.priceSection}>
-                  <Text style={styles.priceLabelLarge}>Total</Text>
-                  <Text style={[styles.priceValueLarge, { color: config.color }]}>
+                <View style={styles.priceCard}>
+                  <Text style={styles.priceLabel}>Total Amount</Text>
+                  <Text style={[styles.priceValue, { color: config.color }]}>
                     ₹{selectedBooking.price.toLocaleString()}
                   </Text>
                 </View>
 
                 {/* Actions */}
-                <View style={styles.actionButtons}>
+                <View style={styles.actions}>
                   {selectedBooking.status === 'pending' && (
                     <>
                       <TouchableOpacity
-                        style={[styles.actionBtn, styles.declineBtn]}
+                        style={styles.declineButton}
                         onPress={handleDeclineBooking}
                         disabled={processingAction}
                       >
-                        <Ionicons name="close" size={20} color={colors.error} />
-                        <Text style={styles.declineBtnText}>Decline</Text>
+                        <Text style={styles.declineText}>Decline</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.actionBtn, styles.acceptBtn, { backgroundColor: config.color }]}
+                        style={[styles.acceptButton, { backgroundColor: config.color }]}
                         onPress={handleAcceptBooking}
                         disabled={processingAction}
                       >
                         {processingAction ? (
                           <ActivityIndicator color={colors.white} size="small" />
                         ) : (
-                          <>
-                            <Ionicons name="checkmark" size={20} color={colors.white} />
-                            <Text style={styles.acceptBtnText}>Accept</Text>
-                          </>
+                          <Text style={styles.acceptText}>Accept</Text>
                         )}
                       </TouchableOpacity>
                     </>
                   )}
                   {selectedBooking.status === 'confirmed' && (
                     <TouchableOpacity
-                      style={[styles.actionBtn, styles.completeBtn, { backgroundColor: config.color }]}
+                      style={[styles.completeButton, { backgroundColor: config.color }]}
                       onPress={handleCompleteBooking}
                       disabled={processingAction}
                     >
                       {processingAction ? (
                         <ActivityIndicator color={colors.white} size="small" />
                       ) : (
-                        <>
-                          <Ionicons name="checkmark-done" size={20} color={colors.white} />
-                          <Text style={styles.acceptBtnText}>Mark Complete</Text>
-                        </>
+                        <Text style={styles.acceptText}>Mark Complete</Text>
                       )}
                     </TouchableOpacity>
                   )}
                   {selectedBooking.status === 'completed' && (
-                    <View style={styles.completedBanner}>
-                      <Ionicons name="checkmark-done-circle" size={24} color="#10B981" />
-                      <Text style={styles.completedText}>This booking has been completed</Text>
+                    <View style={styles.completedState}>
+                      <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                      <Text style={styles.completedText}>Completed</Text>
                     </View>
                   )}
                 </View>
@@ -811,107 +776,83 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FAFAFA',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: colors.gray[500],
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: CALENDAR_PADDING,
+    paddingTop: 8,
+    paddingBottom: 20,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 32,
+    fontWeight: '700',
     color: colors.gray[900],
+    letterSpacing: -0.5,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginTop: 2,
   },
   todayBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: colors.white,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   todayBtnText: {
     fontSize: 14,
     fontWeight: '600',
   },
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 16,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 3,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.gray[900],
-  },
-  statLabel: {
-    fontSize: 12,
-    color: colors.gray[500],
-    marginTop: 2,
-  },
   monthNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 16,
+    paddingHorizontal: CALENDAR_PADDING,
+    marginBottom: 20,
   },
   navBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.white,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  monthTitleContainer: {
+    alignItems: 'center',
   },
   monthTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.gray[900],
   },
-  calendar: {
+  yearTitle: {
+    fontSize: 13,
+    color: colors.gray[400],
+    marginTop: 1,
+  },
+  calendarContainer: {
     backgroundColor: colors.white,
-    marginHorizontal: 20,
-    borderRadius: 16,
+    marginHorizontal: CALENDAR_PADDING,
+    borderRadius: 20,
     padding: 16,
     shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
     elevation: 2,
   },
   weekHeader: {
@@ -925,76 +866,112 @@ const styles = StyleSheet.create({
   },
   dayHeaderText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: colors.gray[500],
+    fontWeight: '500',
+    color: colors.gray[400],
+  },
+  weekendText: {
+    color: colors.gray[300],
   },
   daysGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
   dayCell: {
-    width: '14.28%',
+    width: `${100 / 7}%`,
     aspectRatio: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
+    justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  dayInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   todayCell: {
-    backgroundColor: colors.gray[50],
+    backgroundColor: colors.gray[100],
   },
   selectedCell: {
-    backgroundColor: colors.primary,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   dayText: {
     fontSize: 15,
-    color: colors.gray[900],
+    fontWeight: '500',
+    color: colors.gray[800],
+  },
+  pastDayText: {
+    color: colors.gray[300],
+  },
+  todayText: {
+    fontWeight: '700',
   },
   selectedDayText: {
     color: colors.white,
     fontWeight: '600',
   },
-  bookingIndicators: {
-    flexDirection: 'row',
+  bookingIndicator: {
     position: 'absolute',
-    bottom: 4,
-    gap: 3,
+    bottom: 6,
   },
-  bookingDot: {
+  indicatorDot: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
   },
   bookingsSection: {
-    paddingHorizontal: 20,
-    marginTop: 24,
+    paddingHorizontal: CALENDAR_PADDING,
+    marginTop: 28,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.gray[900],
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  emptyDay: {
-    backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: 40,
-    alignItems: 'center',
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  sectionDate: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.gray[800],
   },
-  emptyDayText: {
+  countBadge: {
+    marginLeft: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  countText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  emptyTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.gray[700],
-    marginTop: 12,
   },
-  emptyDaySubtext: {
+  emptySubtitle: {
     fontSize: 14,
-    color: colors.gray[500],
+    color: colors.gray[400],
     marginTop: 4,
+  },
+  bookingsList: {
+    gap: 12,
   },
   bookingCard: {
     flexDirection: 'row',
@@ -1002,90 +979,103 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 1,
   },
-  bookingTime: {
-    alignItems: 'center',
-    width: 60,
+  timeStrip: {
+    width: 3,
+    height: 48,
+    borderRadius: 2,
+    marginRight: 14,
   },
-  timeText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.gray[900],
-  },
-  durationText: {
-    fontSize: 11,
-    color: colors.gray[500],
-    marginTop: 2,
-  },
-  bookingDivider: {
-    width: 1,
-    height: 50,
-    backgroundColor: colors.gray[200],
-    marginHorizontal: 12,
-  },
-  bookingDetails: {
+  bookingContent: {
     flex: 1,
   },
-  bookingHeader: {
+  bookingTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'space-between',
+    marginBottom: 6,
   },
-  customerName: {
-    fontSize: 15,
+  bookingTime: {
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.gray[900],
+    color: colors.gray[500],
   },
-  statusBadge: {
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 12,
-    gap: 4,
+    borderRadius: 10,
+    gap: 5,
   },
-  statusText: {
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
+    textTransform: 'capitalize',
   },
-  petInfo: {
+  bookingCustomer: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.gray[900],
+    marginBottom: 4,
+  },
+  bookingMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: 2,
   },
-  petText: {
+  metaText: {
     fontSize: 13,
     color: colors.gray[500],
   },
-  serviceText: {
-    fontSize: 13,
-    color: colors.gray[600],
+  metaDivider: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.gray[300],
+    marginHorizontal: 8,
   },
-  priceText: {
+  bookingPrice: {
     fontSize: 15,
     fontWeight: '700',
-    marginTop: 4,
   },
   // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: colors.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: '90%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingBottom: 34,
+    maxHeight: '85%',
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: colors.gray[200],
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1094,11 +1084,19 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '700',
     color: colors.gray[900],
   },
-  statusBanner: {
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.gray[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1107,103 +1105,154 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 20,
   },
-  statusBannerText: {
-    fontSize: 16,
+  statusCardText: {
+    fontSize: 14,
     fontWeight: '600',
   },
-  detailSection: {
-    marginBottom: 20,
+  infoGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
   },
-  detailSectionTitle: {
-    fontSize: 12,
+  infoCard: {
+    flex: 1,
+    backgroundColor: colors.gray[50],
+    borderRadius: 14,
+    padding: 14,
+  },
+  infoLabel: {
+    fontSize: 11,
+    color: colors.gray[400],
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 15,
     fontWeight: '600',
+    color: colors.gray[900],
+  },
+  infoSubvalue: {
+    fontSize: 13,
     color: colors.gray[500],
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
+    marginTop: 1,
+  },
+  infoLink: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  detailCard: {
+    backgroundColor: colors.gray[50],
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 16,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-  },
-  detailText: {
-    fontSize: 15,
-    color: colors.gray[900],
-  },
-  notesText: {
-    fontSize: 14,
-    color: colors.gray[600],
-    backgroundColor: colors.gray[50],
     padding: 12,
-    borderRadius: 10,
+    gap: 12,
+  },
+  detailContent: {
+    flex: 1,
+  },
+  detailLabel: {
+    fontSize: 11,
+    color: colors.gray[400],
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.gray[800],
+  },
+  detailDivider: {
+    height: 1,
+    backgroundColor: colors.gray[200],
+    marginLeft: 42,
+  },
+  notesCard: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  notesLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  notesValue: {
+    fontSize: 14,
+    color: '#78350F',
     lineHeight: 20,
   },
-  priceSection: {
+  priceCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: colors.gray[50],
+    borderRadius: 14,
     padding: 16,
-    borderRadius: 12,
     marginBottom: 20,
   },
-  priceLabelLarge: {
-    fontSize: 16,
+  priceLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.gray[600],
+  },
+  priceValue: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  declineButton: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.gray[200],
+    alignItems: 'center',
+  },
+  declineText: {
+    fontSize: 15,
     fontWeight: '600',
     color: colors.gray[700],
   },
-  priceValueLarge: {
-    fontSize: 24,
-    fontWeight: '700',
+  acceptButton: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
+  acceptText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.white,
   },
-  actionBtn: {
+  completeButton: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  completedState: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#D1FAE5',
     paddingVertical: 16,
     borderRadius: 14,
     gap: 8,
   },
-  declineBtn: {
-    backgroundColor: `${colors.error}10`,
-    borderWidth: 1,
-    borderColor: colors.error,
-  },
-  declineBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.error,
-  },
-  acceptBtn: {},
-  acceptBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.white,
-  },
-  completeBtn: {
-    flex: 1,
-  },
-  completedBanner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10B98115',
-    paddingVertical: 16,
-    borderRadius: 14,
-    gap: 10,
-  },
   completedText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#10B981',
+    color: '#059669',
   },
 });

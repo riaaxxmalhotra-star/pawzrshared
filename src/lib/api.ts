@@ -1,34 +1,160 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ENV from '../config/env';
+import logger from './logger';
 
-const API_URL = 'https://pawzrpro.vercel.app/api';
+const API_URL = ENV.API_URL;
 
-async function getAuthHeader() {
-  const token = await AsyncStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// Default timeout for API requests (15 seconds)
+const DEFAULT_TIMEOUT = 15000;
+
+// Custom error class for API errors
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
 }
 
-export async function apiRequest(
+async function getAuthHeader(): Promise<Record<string, string>> {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch (error) {
+    logger.error('Failed to get auth header');
+    return {};
+  }
+}
+
+export async function apiRequest<T = any>(
   endpoint: string,
-  options: RequestInit = {}
-): Promise<any> {
+  options: RequestInit = {},
+  timeout: number = DEFAULT_TIMEOUT
+): Promise<T> {
   const url = `${API_URL}${endpoint}`;
   const authHeader = await getAuthHeader();
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeader,
-      ...options.headers,
-    },
-  });
+  // Create AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || 'Request failed');
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader,
+        ...options.headers,
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    // Handle different HTTP status codes
+    if (!response.ok) {
+      let errorMessage = 'Request failed';
+      let errorCode: string | undefined;
+
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorData.message || errorMessage;
+        errorCode = errorData.code;
+      } catch {
+        // Response is not JSON
+        if (response.status === 401) {
+          errorMessage = 'Session expired. Please sign in again.';
+          errorCode = 'UNAUTHORIZED';
+        } else if (response.status === 403) {
+          errorMessage = 'You do not have permission to perform this action.';
+          errorCode = 'FORBIDDEN';
+        } else if (response.status === 404) {
+          errorMessage = 'The requested resource was not found.';
+          errorCode = 'NOT_FOUND';
+        } else if (response.status >= 500) {
+          errorMessage = 'Server error. Please try again later.';
+          errorCode = 'SERVER_ERROR';
+        }
+      }
+
+      throw new ApiError(errorMessage, response.status, errorCode);
+    }
+
+    // Handle empty responses
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return response.json();
+    }
+
+    return {} as T;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+
+    // Handle abort/timeout
+    if (error.name === 'AbortError') {
+      throw new ApiError(
+        'Request timed out. Please check your internet connection.',
+        0,
+        'TIMEOUT'
+      );
+    }
+
+    // Handle network errors
+    if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
+      throw new ApiError(
+        'Unable to connect. Please check your internet connection.',
+        0,
+        'NETWORK_ERROR'
+      );
+    }
+
+    // Re-throw ApiError as is
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    // Unknown error
+    throw new ApiError(
+      error.message || 'An unexpected error occurred.',
+      0,
+      'UNKNOWN_ERROR'
+    );
+  }
+}
+
+// Helper for retry logic
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 2,
+  delayMs: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+
+      // Don't retry on client errors (4xx) except 408 (timeout) and 429 (rate limit)
+      if (error instanceof ApiError) {
+        if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+          throw error;
+        }
+      }
+
+      // Wait before retrying
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, delayMs * (attempt + 1)));
+      }
+    }
   }
 
-  return response.json();
+  throw lastError;
 }
 
 // Auth API
@@ -51,7 +177,7 @@ export const authApi = {
 // Pets API
 export const petsApi = {
   getMyPets: async () => {
-    return apiRequest('/pets');
+    return withRetry(() => apiRequest('/pets'));
   },
 
   getPet: async (petId: string) => {
@@ -93,7 +219,7 @@ export const petsApi = {
 export const providersApi = {
   getVets: async (city?: string) => {
     const query = city ? `?city=${encodeURIComponent(city)}` : '';
-    return apiRequest(`/browse/vets${query}`);
+    return withRetry(() => apiRequest(`/browse/vets${query}`));
   },
 
   getVet: async (vetId: string) => {
@@ -102,7 +228,7 @@ export const providersApi = {
 
   getGroomers: async (city?: string) => {
     const query = city ? `?city=${encodeURIComponent(city)}` : '';
-    return apiRequest(`/browse/groomers${query}`);
+    return withRetry(() => apiRequest(`/browse/groomers${query}`));
   },
 
   getGroomer: async (groomerId: string) => {
@@ -111,7 +237,7 @@ export const providersApi = {
 
   getLovers: async (city?: string) => {
     const query = city ? `?city=${encodeURIComponent(city)}` : '';
-    return apiRequest(`/browse/lovers${query}`);
+    return withRetry(() => apiRequest(`/browse/lovers${query}`));
   },
 
   getLover: async (loverId: string) => {
@@ -123,7 +249,7 @@ export const providersApi = {
 export const productsApi = {
   getProducts: async (category?: string) => {
     const query = category ? `?category=${encodeURIComponent(category)}` : '';
-    return apiRequest(`/browse/products${query}`);
+    return withRetry(() => apiRequest(`/browse/products${query}`));
   },
 
   getProduct: async (productId: string) => {
@@ -138,7 +264,7 @@ export const productsApi = {
 // Bookings API
 export const bookingsApi = {
   getMyBookings: async () => {
-    return apiRequest('/bookings');
+    return withRetry(() => apiRequest('/bookings'));
   },
 
   createBooking: async (bookingData: {
@@ -165,12 +291,24 @@ export const bookingsApi = {
   getBooking: async (bookingId: string) => {
     return apiRequest(`/bookings/${bookingId}`);
   },
+
+  updateBooking: async (bookingId: string, bookingData: {
+    status?: string;
+    notes?: string;
+    date?: string;
+    time?: string;
+  }) => {
+    return apiRequest(`/bookings/${bookingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(bookingData),
+    });
+  },
 };
 
 // Orders API
 export const ordersApi = {
   getMyOrders: async () => {
-    return apiRequest('/orders');
+    return withRetry(() => apiRequest('/orders'));
   },
 
   createOrder: async (orderData: {
@@ -191,17 +329,17 @@ export const ordersApi = {
 // Messages API
 export const messagesApi = {
   getConversations: async () => {
-    return apiRequest('/conversations');
+    return withRetry(() => apiRequest('/conversations'));
   },
 
   getMessages: async (conversationId: string) => {
     return apiRequest(`/conversations/${conversationId}/messages`);
   },
 
-  sendMessage: async (conversationId: string, content: string) => {
+  sendMessage: async (conversationId: string, content: string, recipientId?: string) => {
     return apiRequest(`/conversations/${conversationId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, recipientId }),
     });
   },
 
@@ -209,6 +347,13 @@ export const messagesApi = {
     return apiRequest('/conversations', {
       method: 'POST',
       body: JSON.stringify({ recipientId, message }),
+    });
+  },
+
+  // Mark messages as read
+  markAsRead: async (conversationId: string) => {
+    return apiRequest(`/conversations/${conversationId}/read`, {
+      method: 'POST',
     });
   },
 };
@@ -244,7 +389,7 @@ export const profileApi = {
 // Events API
 export const eventsApi = {
   getEvents: async () => {
-    return apiRequest('/events');
+    return withRetry(() => apiRequest('/events'));
   },
 
   getEvent: async (eventId: string) => {
@@ -255,5 +400,47 @@ export const eventsApi = {
     return apiRequest(`/events/${eventId}/rsvp`, {
       method: 'POST',
     });
+  },
+};
+
+// Likes/Matching API
+export const likesApi = {
+  sendLike: async (targetId: string, liked: boolean) => {
+    return apiRequest('/likes', {
+      method: 'POST',
+      body: JSON.stringify({ targetId, liked }),
+    });
+  },
+
+  getMatches: async () => {
+    return withRetry(() => apiRequest('/likes'));
+  },
+
+  createConversation: async (userId: string) => {
+    return apiRequest('/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ recipientId: userId }),
+    });
+  },
+};
+
+// Location API
+export const locationApi = {
+  updateLocation: async (latitude: number, longitude: number) => {
+    return apiRequest('/users/location', {
+      method: 'PUT',
+      body: JSON.stringify({ latitude, longitude }),
+    }, 10000); // 10 second timeout for location updates
+  },
+};
+
+// Swipe Profiles API
+export const swipeApi = {
+  getProfiles: async (userLat?: number, userLng?: number) => {
+    const params = new URLSearchParams();
+    if (userLat !== undefined) params.append('lat', String(userLat));
+    if (userLng !== undefined) params.append('lng', String(userLng));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return withRetry(() => apiRequest(`/swipe${query}`));
   },
 };

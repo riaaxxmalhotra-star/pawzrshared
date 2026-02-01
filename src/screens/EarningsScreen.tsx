@@ -27,7 +27,7 @@ export default function EarningsScreen() {
       case 'SUPPLIER':
         return { color: '#3B82F6', title: 'Revenue' };
       case 'LOVER':
-        return { color: '#EC4899', title: 'My Earnings' };
+        return { color: '#F97316', title: 'My Earnings' };
       default:
         return { color: colors.primary, title: 'Earnings' };
     }

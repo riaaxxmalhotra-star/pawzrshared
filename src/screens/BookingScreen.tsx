@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { bookingsApi, petsApi } from '../lib/api';
+import logger from '../lib/logger';
 
 interface BookingScreenProps {
   route?: {
@@ -69,7 +70,7 @@ export default function BookingScreen({ route, navigation }: BookingScreenProps)
         setSelectedPet(petsList[0]);
       }
     } catch (error) {
-      console.error('Failed to load pets:', error);
+      logger.error('Failed to load pets:', error);
     } finally {
       setLoading(false);
     }

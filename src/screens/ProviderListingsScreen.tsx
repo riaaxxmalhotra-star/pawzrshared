@@ -19,6 +19,7 @@ import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 import { apiRequest } from '../lib/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import logger from '../lib/logger';
 
 interface Service {
   id: string;
@@ -87,7 +88,7 @@ export default function ProviderListingsScreen() {
       });
       setListings(isSupplier ? (data.products || []) : (data.services || []));
     } catch (error) {
-      console.error('Failed to load listings:', error);
+      logger.error('Failed to load listings:', error);
       // Use mock data for demo
       setListings(getMockListings());
     } finally {
@@ -191,10 +192,16 @@ export default function ProviderListingsScreen() {
       loadListings();
       Alert.alert('Success', editingItem ? 'Listing updated!' : 'Listing added!');
     } catch (error) {
-      console.error('Failed to save:', error);
+      logger.error('Failed to save:', error);
       // For demo, just update locally
       if (editingItem) {
-        setListings(listings.map(l => l.id === editingItem.id ? { ...l, ...formData, price: parseFloat(formData.price) } : l));
+        setListings(listings.map(l => l.id === editingItem.id ? {
+          ...l,
+          ...formData,
+          price: parseFloat(formData.price),
+          ...(formData.stock ? { stock: parseInt(formData.stock) } : {}),
+          ...(formData.duration ? { duration: parseInt(formData.duration) } : {}),
+        } : l) as (Service | Product)[]);
       } else {
         const newItem = {
           id: Date.now().toString(),
@@ -259,7 +266,7 @@ export default function ProviderListingsScreen() {
       case 'SUPPLIER':
         return { title: 'My Products', icon: 'storefront', color: '#3B82F6', addText: 'Add Product' };
       case 'LOVER':
-        return { title: 'My Services', icon: 'heart', color: '#EC4899', addText: 'Add Service' };
+        return { title: 'My Services', icon: 'heart', color: '#F97316', addText: 'Add Service' };
       default:
         return { title: 'My Listings', icon: 'list', color: colors.primary, addText: 'Add Listing' };
     }

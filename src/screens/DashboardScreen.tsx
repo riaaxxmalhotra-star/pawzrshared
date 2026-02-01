@@ -13,16 +13,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
-import { FEATURES } from '../config/featureFlags';
 
 const { width } = Dimensions.get('window');
+
+// Role-specific colors
+const roleColors = {
+  OWNER: '#F97316',
+  LOVER: '#F97316',    // Orange (same as Owner)
+  VET: '#10B981',
+  GROOMER: '#8B5CF6',
+  SUPPLIER: '#3B82F6',
+};
 
 export default function DashboardScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<any>();
   const userRole = (user?.role || 'OWNER').toUpperCase();
-  const isLover = userRole === 'LOVER';
-  const isOwner = userRole === 'OWNER';
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -31,32 +37,421 @@ export default function DashboardScreen() {
     return 'Good evening';
   };
 
-  // Pet Lover Dashboard - Bumble Style
-  if (isLover) {
+  const roleColor = roleColors[userRole as keyof typeof roleColors] || colors.primary;
+
+  // Vet Dashboard
+  if (userRole === 'VET') {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           {/* Welcome Card */}
-          <View style={styles.welcomeCard}>
+          <View style={[styles.welcomeCard, { borderLeftWidth: 4, borderLeftColor: roleColor }]}>
+            <View style={styles.welcomeContent}>
+              <Text style={styles.welcomeGreeting}>{getGreeting()},</Text>
+              <Text style={styles.welcomeName}>Dr. {user?.name?.split(' ')[0] || 'there'}</Text>
+              <Text style={styles.welcomeSubtext}>Your clinic is ready for patients</Text>
+            </View>
+            {user?.image ? (
+              <Image source={{ uri: user.image }} style={[styles.welcomeAvatar, { borderColor: roleColor }]} />
+            ) : (
+              <View style={[styles.welcomeAvatarPlaceholder, { backgroundColor: roleColor }]}>
+                <Text style={styles.welcomeAvatarText}>{user?.name?.charAt(0) || '?'}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Today's Overview */}
+          <View style={[styles.overviewCard, { backgroundColor: roleColor }]}>
+            <Text style={styles.overviewTitle}>Today's Overview</Text>
+            <View style={styles.overviewStats}>
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Appointments</Text>
+              </View>
+              <View style={styles.overviewDivider} />
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Pending</Text>
+              </View>
+              <View style={styles.overviewDivider} />
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Completed</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Actions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Calendar')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="calendar" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Calendar</Text>
+                <Text style={styles.actionSubtext}>Manage bookings</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('ProviderListings')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="medical" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Services</Text>
+                <Text style={styles.actionSubtext}>Manage services</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('VendorCRM')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#3B82F615' }]}>
+                  <Ionicons name="people" size={26} color="#3B82F6" />
+                </View>
+                <Text style={styles.actionTitle}>CRM</Text>
+                <Text style={styles.actionSubtext}>Manage patients</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Analytics')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="stats-chart" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Analytics</Text>
+                <Text style={styles.actionSubtext}>View insights</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Earnings')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#F59E0B15' }]}>
+                  <Ionicons name="wallet" size={26} color="#F59E0B" />
+                </View>
+                <Text style={styles.actionTitle}>Earnings</Text>
+                <Text style={styles.actionSubtext}>Track revenue</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Subscription')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#8B5CF615' }]}>
+                  <Ionicons name="diamond" size={26} color="#8B5CF6" />
+                </View>
+                <Text style={styles.actionTitle}>Upgrade</Text>
+                <Text style={styles.actionSubtext}>Pro features</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>🏥</Text>
+              <Text style={styles.statValue}>0</Text>
+              <Text style={styles.statLabel}>Patients</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>⭐</Text>
+              <Text style={styles.statValue}>New</Text>
+              <Text style={styles.statLabel}>Rating</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>💰</Text>
+              <Text style={styles.statValue}>₹0</Text>
+              <Text style={styles.statLabel}>Earned</Text>
+            </View>
+          </View>
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Groomer Dashboard
+  if (userRole === 'GROOMER') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* Welcome Card */}
+          <View style={[styles.welcomeCard, { borderLeftWidth: 4, borderLeftColor: roleColor }]}>
+            <View style={styles.welcomeContent}>
+              <Text style={styles.welcomeGreeting}>{getGreeting()},</Text>
+              <Text style={styles.welcomeName}>{user?.name?.split(' ')[0] || 'there'}</Text>
+              <Text style={styles.welcomeSubtext}>Ready to make pets beautiful!</Text>
+            </View>
+            {user?.image ? (
+              <Image source={{ uri: user.image }} style={[styles.welcomeAvatar, { borderColor: roleColor }]} />
+            ) : (
+              <View style={[styles.welcomeAvatarPlaceholder, { backgroundColor: roleColor }]}>
+                <Text style={styles.welcomeAvatarText}>{user?.name?.charAt(0) || '?'}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Today's Overview */}
+          <View style={[styles.overviewCard, { backgroundColor: roleColor }]}>
+            <Text style={styles.overviewTitle}>Today's Sessions</Text>
+            <View style={styles.overviewStats}>
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Bookings</Text>
+              </View>
+              <View style={styles.overviewDivider} />
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Pending</Text>
+              </View>
+              <View style={styles.overviewDivider} />
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Done</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Actions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Calendar')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="calendar" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Calendar</Text>
+                <Text style={styles.actionSubtext}>Manage bookings</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('ProviderListings')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="cut" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Services</Text>
+                <Text style={styles.actionSubtext}>Grooming packages</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('VendorCRM')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#3B82F615' }]}>
+                  <Ionicons name="people" size={26} color="#3B82F6" />
+                </View>
+                <Text style={styles.actionTitle}>CRM</Text>
+                <Text style={styles.actionSubtext}>Manage clients</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Analytics')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="stats-chart" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Analytics</Text>
+                <Text style={styles.actionSubtext}>View insights</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Earnings')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#F59E0B15' }]}>
+                  <Ionicons name="wallet" size={26} color="#F59E0B" />
+                </View>
+                <Text style={styles.actionTitle}>Earnings</Text>
+                <Text style={styles.actionSubtext}>Track revenue</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Subscription')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#8B5CF615' }]}>
+                  <Ionicons name="diamond" size={26} color="#8B5CF6" />
+                </View>
+                <Text style={styles.actionTitle}>Upgrade</Text>
+                <Text style={styles.actionSubtext}>Pro features</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>✂️</Text>
+              <Text style={styles.statValue}>0</Text>
+              <Text style={styles.statLabel}>Sessions</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>⭐</Text>
+              <Text style={styles.statValue}>New</Text>
+              <Text style={styles.statLabel}>Rating</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>💰</Text>
+              <Text style={styles.statValue}>₹0</Text>
+              <Text style={styles.statLabel}>Earned</Text>
+            </View>
+          </View>
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Supplier Dashboard
+  if (userRole === 'SUPPLIER') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* Welcome Card */}
+          <View style={[styles.welcomeCard, { borderLeftWidth: 4, borderLeftColor: roleColor }]}>
+            <View style={styles.welcomeContent}>
+              <Text style={styles.welcomeGreeting}>{getGreeting()},</Text>
+              <Text style={styles.welcomeName}>{user?.name?.split(' ')[0] || 'there'}</Text>
+              <Text style={styles.welcomeSubtext}>Your store is open for business</Text>
+            </View>
+            {user?.image ? (
+              <Image source={{ uri: user.image }} style={[styles.welcomeAvatar, { borderColor: roleColor }]} />
+            ) : (
+              <View style={[styles.welcomeAvatarPlaceholder, { backgroundColor: roleColor }]}>
+                <Text style={styles.welcomeAvatarText}>{user?.name?.charAt(0) || '?'}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Today's Overview */}
+          <View style={[styles.overviewCard, { backgroundColor: roleColor }]}>
+            <Text style={styles.overviewTitle}>Today's Orders</Text>
+            <View style={styles.overviewStats}>
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>New</Text>
+              </View>
+              <View style={styles.overviewDivider} />
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Processing</Text>
+              </View>
+              <View style={styles.overviewDivider} />
+              <View style={styles.overviewStat}>
+                <Text style={styles.overviewValue}>0</Text>
+                <Text style={styles.overviewLabel}>Shipped</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Actions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Orders')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="receipt" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Orders</Text>
+                <Text style={styles.actionSubtext}>Manage orders</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Inventory')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="cube" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Inventory</Text>
+                <Text style={styles.actionSubtext}>Stock levels</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('ProviderListings')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="pricetag" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Products</Text>
+                <Text style={styles.actionSubtext}>Add products</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('VendorCRM')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#10B98115' }]}>
+                  <Ionicons name="people" size={26} color="#10B981" />
+                </View>
+                <Text style={styles.actionTitle}>CRM</Text>
+                <Text style={styles.actionSubtext}>Manage customers</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Earnings')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#F59E0B15' }]}>
+                  <Ionicons name="wallet" size={26} color="#F59E0B" />
+                </View>
+                <Text style={styles.actionTitle}>Revenue</Text>
+                <Text style={styles.actionSubtext}>Track sales</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Subscription')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#8B5CF615' }]}>
+                  <Ionicons name="diamond" size={26} color="#8B5CF6" />
+                </View>
+                <Text style={styles.actionTitle}>Upgrade</Text>
+                <Text style={styles.actionSubtext}>Pro features</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>📦</Text>
+              <Text style={styles.statValue}>0</Text>
+              <Text style={styles.statLabel}>Products</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>🛒</Text>
+              <Text style={styles.statValue}>0</Text>
+              <Text style={styles.statLabel}>Orders</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statEmoji}>💰</Text>
+              <Text style={styles.statValue}>₹0</Text>
+              <Text style={styles.statLabel}>Revenue</Text>
+            </View>
+          </View>
+
+          {/* Inventory Alert */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Inventory Status</Text>
+            <View style={[styles.tipCard, { backgroundColor: '#DBEAFE' }]}>
+              <Text style={styles.tipEmoji}>📋</Text>
+              <View style={styles.tipContent}>
+                <Text style={styles.tipTitle}>All products in stock</Text>
+                <Text style={styles.tipText}>
+                  Add products to your store to start selling!
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ height: 100 }} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Pet Lover Dashboard
+  if (userRole === 'LOVER') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* Welcome Card */}
+          <View style={[styles.welcomeCard, { borderLeftWidth: 4, borderLeftColor: roleColor }]}>
             <View style={styles.welcomeContent}>
               <Text style={styles.welcomeGreeting}>{getGreeting()},</Text>
               <Text style={styles.welcomeName}>{user?.name?.split(' ')[0] || 'there'}</Text>
               <Text style={styles.welcomeSubtext}>Ready to meet some adorable pets?</Text>
             </View>
             {user?.image ? (
-              <Image source={{ uri: user.image }} style={styles.welcomeAvatar} />
+              <Image source={{ uri: user.image }} style={[styles.welcomeAvatar, { borderColor: roleColor }]} />
             ) : (
-              <View style={styles.welcomeAvatarPlaceholder}>
-                <Text style={styles.welcomeAvatarText}>
-                  {user?.name?.charAt(0) || '?'}
-                </Text>
+              <View style={[styles.welcomeAvatarPlaceholder, { backgroundColor: roleColor }]}>
+                <Text style={styles.welcomeAvatarText}>{user?.name?.charAt(0) || '?'}</Text>
               </View>
             )}
           </View>
 
           {/* Start Matching CTA */}
           <TouchableOpacity
-            style={styles.ctaCard}
+            style={[styles.ctaCard, { backgroundColor: roleColor }]}
             onPress={() => navigation.getParent()?.navigate('Swipe')}
             activeOpacity={0.9}
           >
@@ -66,10 +461,50 @@ export default function DashboardScreen() {
             <Text style={styles.ctaTitle}>Start Matching</Text>
             <Text style={styles.ctaSubtext}>Swipe to find pets that need your love</Text>
             <View style={styles.ctaButton}>
-              <Text style={styles.ctaButtonText}>Let's Go</Text>
-              <Ionicons name="arrow-forward" size={20} color={colors.primary} />
+              <Text style={[styles.ctaButtonText, { color: roleColor }]}>Let's Go</Text>
+              <Ionicons name="arrow-forward" size={20} color={roleColor} />
             </View>
           </TouchableOpacity>
+
+          {/* Quick Actions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Calendar')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="calendar" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Calendar</Text>
+                <Text style={styles.actionSubtext}>My schedule</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Earnings')}>
+                <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                  <Ionicons name="cash" size={26} color={roleColor} />
+                </View>
+                <Text style={styles.actionTitle}>Earnings</Text>
+                <Text style={styles.actionSubtext}>Track income</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionsGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('PawzrWallet')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#10B98115' }]}>
+                  <Ionicons name="wallet" size={26} color="#10B981" />
+                </View>
+                <Text style={styles.actionTitle}>Wallet</Text>
+                <Text style={styles.actionSubtext}>Rewards & points</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Browse')}>
+                <View style={[styles.actionIcon, { backgroundColor: '#3B82F615' }]}>
+                  <Ionicons name="search" size={26} color="#3B82F6" />
+                </View>
+                <Text style={styles.actionTitle}>Browse</Text>
+                <Text style={styles.actionSubtext}>Find services</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           {/* Stats Row */}
           <View style={styles.statsRow}>
@@ -95,7 +530,7 @@ export default function DashboardScreen() {
             <Text style={styles.sectionTitle}>How It Works</Text>
             <View style={styles.howItWorksCard}>
               <View style={styles.stepRow}>
-                <View style={styles.stepNumber}>
+                <View style={[styles.stepNumber, { backgroundColor: roleColor }]}>
                   <Text style={styles.stepNumberText}>1</Text>
                 </View>
                 <View style={styles.stepContent}>
@@ -104,7 +539,7 @@ export default function DashboardScreen() {
                 </View>
               </View>
               <View style={styles.stepRow}>
-                <View style={styles.stepNumber}>
+                <View style={[styles.stepNumber, { backgroundColor: roleColor }]}>
                   <Text style={styles.stepNumberText}>2</Text>
                 </View>
                 <View style={styles.stepContent}>
@@ -113,12 +548,12 @@ export default function DashboardScreen() {
                 </View>
               </View>
               <View style={styles.stepRow}>
-                <View style={styles.stepNumber}>
+                <View style={[styles.stepNumber, { backgroundColor: roleColor }]}>
                   <Text style={styles.stepNumberText}>3</Text>
                 </View>
                 <View style={styles.stepContent}>
-                  <Text style={styles.stepTitle}>Meet & Play</Text>
-                  <Text style={styles.stepText}>Schedule playdates or walks</Text>
+                  <Text style={styles.stepTitle}>Meet & Earn</Text>
+                  <Text style={styles.stepText}>Walk, sit, and get paid</Text>
                 </View>
               </View>
             </View>
@@ -130,31 +565,29 @@ export default function DashboardScreen() {
     );
   }
 
-  // Pet Owner Dashboard - Bumble Style
+  // Pet Owner Dashboard (default)
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Welcome Card */}
-        <View style={styles.welcomeCard}>
+        <View style={[styles.welcomeCard, { borderLeftWidth: 4, borderLeftColor: roleColor }]}>
           <View style={styles.welcomeContent}>
             <Text style={styles.welcomeGreeting}>{getGreeting()},</Text>
             <Text style={styles.welcomeName}>{user?.name?.split(' ')[0] || 'there'}</Text>
             <Text style={styles.welcomeSubtext}>What's your pet up to today?</Text>
           </View>
           {user?.image ? (
-            <Image source={{ uri: user.image }} style={styles.welcomeAvatar} />
+            <Image source={{ uri: user.image }} style={[styles.welcomeAvatar, { borderColor: roleColor }]} />
           ) : (
-            <View style={styles.welcomeAvatarPlaceholder}>
-              <Text style={styles.welcomeAvatarText}>
-                {user?.name?.charAt(0) || '?'}
-              </Text>
+            <View style={[styles.welcomeAvatarPlaceholder, { backgroundColor: roleColor }]}>
+              <Text style={styles.welcomeAvatarText}>{user?.name?.charAt(0) || '?'}</Text>
             </View>
           )}
         </View>
 
         {/* My Pets Card */}
         <TouchableOpacity
-          style={styles.petsCard}
+          style={[styles.petsCard, { backgroundColor: roleColor }]}
           onPress={() => navigation.navigate('MyPets')}
           activeOpacity={0.9}
         >
@@ -180,8 +613,8 @@ export default function DashboardScreen() {
               style={styles.actionCard}
               onPress={() => navigation.getParent()?.navigate('Swipe')}
             >
-              <View style={[styles.actionIcon, { backgroundColor: '#EC489915' }]}>
-                <Ionicons name="heart" size={26} color="#EC4899" />
+              <View style={[styles.actionIcon, { backgroundColor: '#F9731615' }]}>
+                <Ionicons name="heart" size={26} color="#F97316" />
               </View>
               <Text style={styles.actionTitle}>Find Lovers</Text>
               <Text style={styles.actionSubtext}>Pet sitters & walkers</Text>
@@ -191,11 +624,47 @@ export default function DashboardScreen() {
               style={styles.actionCard}
               onPress={() => navigation.navigate('MyPets')}
             >
-              <View style={[styles.actionIcon, { backgroundColor: `${colors.primary}15` }]}>
-                <Ionicons name="add-circle" size={26} color={colors.primary} />
+              <View style={[styles.actionIcon, { backgroundColor: `${roleColor}15` }]}>
+                <Ionicons name="add-circle" size={26} color={roleColor} />
               </View>
               <Text style={styles.actionTitle}>Add Pet</Text>
               <Text style={styles.actionSubtext}>Register new pet</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.actionsGrid}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Appointments')}>
+              <View style={[styles.actionIcon, { backgroundColor: '#10B98115' }]}>
+                <Ionicons name="calendar" size={26} color="#10B981" />
+              </View>
+              <Text style={styles.actionTitle}>Appointments</Text>
+              <Text style={styles.actionSubtext}>Vet & groomer visits</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Browse')}>
+              <View style={[styles.actionIcon, { backgroundColor: '#3B82F615' }]}>
+                <Ionicons name="search" size={26} color="#3B82F6" />
+              </View>
+              <Text style={styles.actionTitle}>Browse</Text>
+              <Text style={styles.actionSubtext}>Find services</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.actionsGrid}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('PawzrWallet')}>
+              <View style={[styles.actionIcon, { backgroundColor: '#8B5CF615' }]}>
+                <Ionicons name="wallet" size={26} color="#8B5CF6" />
+              </View>
+              <Text style={styles.actionTitle}>Wallet</Text>
+              <Text style={styles.actionSubtext}>Rewards & cashback</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Notifications')}>
+              <View style={[styles.actionIcon, { backgroundColor: '#F5970B15' }]}>
+                <Ionicons name="notifications" size={26} color="#F59E0B" />
+              </View>
+              <Text style={styles.actionTitle}>Alerts</Text>
+              <Text style={styles.actionSubtext}>Notifications</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -247,23 +716,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
   },
-  header: {
-    paddingTop: 10,
-    paddingBottom: 20,
-    alignItems: 'center',
-  },
-  logoContainer: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  logo: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.white,
-    letterSpacing: -0.5,
-  },
   welcomeCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -300,13 +752,11 @@ const styles = StyleSheet.create({
     height: 70,
     borderRadius: 35,
     borderWidth: 3,
-    borderColor: colors.primary,
   },
   welcomeAvatarPlaceholder: {
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -315,13 +765,51 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.white,
   },
+  overviewCard: {
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  overviewTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.white,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  overviewStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  overviewStat: {
+    alignItems: 'center',
+  },
+  overviewValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  overviewLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
+  },
+  overviewDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
   ctaCard: {
-    backgroundColor: colors.primary,
     borderRadius: 28,
     padding: 28,
     alignItems: 'center',
     marginBottom: 20,
-    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
@@ -359,14 +847,11 @@ const styles = StyleSheet.create({
   ctaButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.primary,
   },
   petsCard: {
-    backgroundColor: colors.primary,
     borderRadius: 24,
     padding: 20,
     marginBottom: 20,
-    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
@@ -410,6 +895,7 @@ const styles = StyleSheet.create({
   actionsGrid: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 12,
   },
   actionCard: {
     flex: 1,
@@ -491,7 +977,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },

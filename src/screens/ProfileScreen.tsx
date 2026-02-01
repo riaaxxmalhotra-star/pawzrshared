@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Switch,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,8 +20,7 @@ export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const userRole = (user?.role || 'OWNER').toUpperCase();
   const isLover = userRole === 'LOVER';
-
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const isProvider = ['VET', 'GROOMER', 'SUPPLIER'].includes(userRole);
 
   const handleChangePhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -80,18 +78,65 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.userName}>{user?.name || 'User'}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.userName}>{user?.name || 'User'}</Text>
+            {user?.aadhaarVerified && (
+              <View style={styles.verifiedBadge}>
+                <Ionicons name="checkmark-circle" size={22} color="#10B981" />
+              </View>
+            )}
+          </View>
           <Text style={styles.userEmail}>{user?.email}</Text>
 
           <View style={styles.roleBadge}>
             <Ionicons
-              name={isLover ? 'heart' : 'paw'}
+              name={
+                isProvider
+                  ? userRole === 'VET' ? 'medical' : userRole === 'GROOMER' ? 'cut' : 'storefront'
+                  : isLover ? 'heart' : 'paw'
+              }
               size={16}
-              color={isLover ? '#EC4899' : colors.primary}
+              color={
+                isProvider
+                  ? userRole === 'VET' ? '#10B981' : userRole === 'GROOMER' ? '#8B5CF6' : '#3B82F6'
+                  : isLover ? '#F97316' : colors.primary
+              }
             />
-            <Text style={[styles.roleText, { color: isLover ? '#EC4899' : colors.primary }]}>
-              {isLover ? 'Pet Lover' : 'Pet Owner'}
+            <Text style={[styles.roleText, {
+              color: isProvider
+                ? userRole === 'VET' ? '#10B981' : userRole === 'GROOMER' ? '#8B5CF6' : '#3B82F6'
+                : isLover ? '#F97316' : colors.primary
+            }]}>
+              {isProvider
+                ? userRole === 'VET' ? 'Veterinarian' : userRole === 'GROOMER' ? 'Pet Groomer' : 'Pet Supplier'
+                : isLover ? 'Pet Lover' : 'Pet Owner'}
             </Text>
+          </View>
+
+          {/* Trust Badges Row */}
+          <View style={styles.trustBadgesRow}>
+            {user?.aadhaarVerified && (
+              <View style={[styles.trustBadge, { backgroundColor: '#10B98115' }]}>
+                <Ionicons name="shield-checkmark" size={14} color="#10B981" />
+                <Text style={[styles.trustBadgeText, { color: '#10B981' }]}>ID Verified</Text>
+              </View>
+            )}
+            <View style={[styles.trustBadge, { backgroundColor: '#3B82F615' }]}>
+              <Ionicons name="mail" size={14} color="#3B82F6" />
+              <Text style={[styles.trustBadgeText, { color: '#3B82F6' }]}>Email</Text>
+            </View>
+            {(user as any)?.phoneVerified && (
+              <View style={[styles.trustBadge, { backgroundColor: '#8B5CF615' }]}>
+                <Ionicons name="call" size={14} color="#8B5CF6" />
+                <Text style={[styles.trustBadgeText, { color: '#8B5CF6' }]}>Phone</Text>
+              </View>
+            )}
+            {isProvider && (
+              <View style={[styles.trustBadge, { backgroundColor: '#F5970B15' }]}>
+                <Ionicons name="diamond" size={14} color="#F59E0B" />
+                <Text style={[styles.trustBadgeText, { color: '#F59E0B' }]}>Pro</Text>
+              </View>
+            )}
           </View>
 
           {/* Quick Stats */}
@@ -125,14 +170,50 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
           </TouchableOpacity>
 
-          {!isLover && (
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('PawzrWallet')}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#10B98115' }]}>
+                <Ionicons name="wallet-outline" size={20} color="#10B981" />
+              </View>
+              <View>
+                <Text style={styles.menuLabel}>Pawzr Wallet</Text>
+                <Text style={styles.menuSubLabel}>Rewards, cashback & loyalty</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('Subscription')}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#F5970B15' }]}>
+                <Ionicons name="diamond-outline" size={20} color="#F59E0B" />
+              </View>
+              <View>
+                <Text style={styles.menuLabel}>Subscription</Text>
+                <Text style={styles.menuSubLabel}>
+                  {isProvider ? 'Upgrade to reduce commission' : 'Premium features & benefits'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.proBadge}>
+              <Text style={styles.proBadgeText}>Pro</Text>
+            </View>
+          </TouchableOpacity>
+
+          {!isLover && !isProvider && (
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => navigation.navigate('Pets')}
             >
               <View style={styles.menuItemLeft}>
-                <View style={[styles.menuIcon, { backgroundColor: '#EC489915' }]}>
-                  <Ionicons name="paw-outline" size={20} color="#EC4899" />
+                <View style={[styles.menuIcon, { backgroundColor: '#F9731615' }]}>
+                  <Ionicons name="paw-outline" size={20} color="#F97316" />
                 </View>
                 <Text style={styles.menuLabel}>My Pets</Text>
               </View>
@@ -142,29 +223,59 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('Notifications')}
+          >
             <View style={styles.menuItemLeft}>
               <View style={[styles.menuIcon, { backgroundColor: '#8B5CF615' }]}>
                 <Ionicons name="notifications-outline" size={20} color="#8B5CF6" />
               </View>
-              <Text style={styles.menuLabel}>Notifications</Text>
+              <View>
+                <Text style={styles.menuLabel}>Notifications</Text>
+                <Text style={styles.menuSubLabel}>Manage your alerts</Text>
+              </View>
             </View>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: colors.gray[200], true: `${colors.primary}50` }}
-              thumbColor={notificationsEnabled ? colors.primary : colors.gray[400]}
-            />
+            <View style={styles.notifBadge}>
+              <Text style={styles.notifBadgeText}>3</Text>
+            </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('Settings')}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: colors.gray[100] }]}>
+                <Ionicons name="settings-outline" size={20} color={colors.gray[600]} />
+              </View>
+              <Text style={styles.menuLabel}>Settings</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('AadhaarVerification')}
+          >
             <View style={styles.menuItemLeft}>
               <View style={[styles.menuIcon, { backgroundColor: '#10B98115' }]}>
                 <Ionicons name="shield-checkmark-outline" size={20} color="#10B981" />
               </View>
-              <Text style={styles.menuLabel}>Privacy & Security</Text>
+              <View>
+                <Text style={styles.menuLabel}>Aadhaar Verification</Text>
+                <Text style={styles.menuSubLabel}>
+                  {user?.aadhaarVerified ? 'Verified' : 'Get verified to build trust'}
+                </Text>
+              </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
+            {user?.aadhaarVerified ? (
+              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+            ) : (
+              <View style={styles.verifyNowBadge}>
+                <Text style={styles.verifyNowText}>Verify</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.menuItem}>
@@ -185,7 +296,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* Version */}
-        <Text style={styles.version}>pawzr v1.0.0</Text>
+        <Text style={styles.version}>pawzr v1.2.0</Text>
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -259,10 +370,21 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: colors.white,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   userName: {
     fontSize: 26,
     fontWeight: '800',
     color: colors.gray[900],
+    marginBottom: 4,
+  },
+  verifiedBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    padding: 4,
+    borderRadius: 12,
     marginBottom: 4,
   },
   userEmail: {
@@ -282,6 +404,25 @@ const styles = StyleSheet.create({
   },
   roleText: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  trustBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 20,
+    justifyContent: 'center',
+  },
+  trustBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 4,
+  },
+  trustBadgeText: {
+    fontSize: 12,
     fontWeight: '600',
   },
   statsRow: {
@@ -346,6 +487,22 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.gray[900],
   },
+  menuSubLabel: {
+    fontSize: 12,
+    color: colors.gray[500],
+    marginTop: 2,
+  },
+  verifyNowBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  verifyNowText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.white,
+  },
   menuBadge: {
     backgroundColor: colors.primary,
     paddingHorizontal: 10,
@@ -355,6 +512,30 @@ const styles = StyleSheet.create({
   menuBadgeText: {
     fontSize: 13,
     fontWeight: '600',
+    color: colors.white,
+  },
+  proBadge: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  proBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  notifBadge: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  notifBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
     color: colors.white,
   },
   signOutBtn: {

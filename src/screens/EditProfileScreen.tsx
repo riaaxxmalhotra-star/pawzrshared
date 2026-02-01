@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import logger from '../lib/logger';
 
 export default function EditProfileScreen() {
   const { user, updateUserProfile } = useAuth();
@@ -54,7 +55,7 @@ export default function EditProfileScreen() {
           setState(postOffice.State || '');
         }
       } catch (error) {
-        console.log('Pincode lookup failed:', error);
+        logger.log('Pincode lookup failed:', error);
       } finally {
         setIsLoading(false);
       }

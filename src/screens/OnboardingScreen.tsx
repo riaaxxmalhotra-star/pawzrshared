@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { apiRequest } from '../lib/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
 
@@ -66,7 +67,7 @@ const roleOptions: RoleOption[] = [
     title: 'Pet Lover',
     description: 'I offer pet walking & sitting',
     icon: 'heart',
-    color: '#EC4899',
+    color: '#F97316',
   },
 ];
 
@@ -234,7 +235,7 @@ export default function OnboardingScreen({ onComplete, userId }: Props) {
 
       onComplete(selectedRole!);
     } catch (error: any) {
-      console.error('Failed to save profile:', error);
+      logger.error('Failed to save profile:', error);
       // Still complete even if API fails
       onComplete(selectedRole!);
     } finally {
@@ -909,8 +910,8 @@ const styles = StyleSheet.create({
     borderColor: '#3B82F6',
   },
   chipSelectedLover: {
-    backgroundColor: '#EC4899',
-    borderColor: '#EC4899',
+    backgroundColor: '#F97316',
+    borderColor: '#F97316',
   },
   chipText: {
     fontSize: 13,

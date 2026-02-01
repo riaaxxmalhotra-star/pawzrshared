@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import logger from '../lib/logger';
 
 interface ProviderData {
   id: string;
@@ -97,7 +98,7 @@ export default function ProviderProfileScreen() {
           Alert.alert('Error', 'Unable to make phone call');
         }
       })
-      .catch((err) => console.error('Error opening phone:', err));
+      .catch((err) => logger.error('Error opening phone:', err));
   };
 
   const handleMessage = () => {
@@ -125,7 +126,7 @@ export default function ProviderProfileScreen() {
           });
         }
       })
-      .catch((err) => console.error('Error opening maps:', err));
+      .catch((err) => logger.error('Error opening maps:', err));
   };
 
   const handleBookAppointment = () => {

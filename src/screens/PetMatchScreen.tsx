@@ -9,16 +9,25 @@ import {
   TouchableOpacity,
   Image,
   Modal,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { likesApi } from '../lib/api';
+import { useLocation } from '../hooks/useLocation';
+import { getDistanceString } from '../utils/distance';
+import logger from '../lib/logger';
+import { ActivityIndicator } from 'react-native';
+import { isTablet, getCardDimensions } from '../utils/responsive';
 
 const { width, height } = Dimensions.get('window');
-const CARD_WIDTH = width - 24;
-const CARD_HEIGHT = height * 0.72;
+// Use responsive card dimensions
+const cardDims = getCardDimensions();
+const CARD_WIDTH = cardDims.width;
+const CARD_HEIGHT = cardDims.height;
 const SWIPE_THRESHOLD = 120;
 
 interface Pet {
@@ -29,9 +38,12 @@ interface Pet {
   gender: string;
   photos: string[];
   owner: {
+    id?: string;
     name: string;
     location: string;
-    distance: string;
+    distance?: string;
+    latitude?: number;
+    longitude?: number;
     verified: boolean;
   };
   traits: string[];
@@ -157,14 +169,32 @@ const mockPets: Pet[] = [
 
 export default function PetMatchScreen() {
   const navigation = useNavigation<any>();
+  const { location } = useLocation();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [likedPets, setLikedPets] = useState<string[]>([]);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [matchedPet, setMatchedPet] = useState<Pet | null>(null);
+  const [matchConversationId, setMatchConversationId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [pets, setPets] = useState<Pet[]>(mockPets);
+  const [startingChat, setStartingChat] = useState(false);
 
   const position = useRef(new Animated.ValueXY()).current;
+
+  // Helper function to get distance string for a pet owner
+  const getPetDistance = (pet: Pet): string => {
+    if (pet.owner.latitude && pet.owner.longitude && location) {
+      return getDistanceString(
+        location.latitude,
+        location.longitude,
+        pet.owner.latitude,
+        pet.owner.longitude
+      );
+    }
+    return pet.owner.distance || 'Distance unknown';
+  };
 
   const rotation = position.x.interpolate({
     inputRange: [-width / 2, 0, width / 2],
@@ -192,11 +222,24 @@ export default function PetMatchScreen() {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        // Only capture horizontal swipes (not vertical scrolls or taps)
+        return Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
+      },
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        // Capture the gesture if it's clearly a horizontal swipe
+        return Math.abs(gesture.dx) > 20 && Math.abs(gesture.dx) > Math.abs(gesture.dy * 1.5);
+      },
+      onPanResponderGrant: () => {
+        // Reset position when gesture starts
+        position.setOffset({ x: 0, y: 0 });
+      },
       onPanResponderMove: (_, gesture) => {
         position.setValue({ x: gesture.dx, y: gesture.dy * 0.5 });
       },
       onPanResponderRelease: (_, gesture) => {
+        position.flattenOffset();
         if (gesture.dx > SWIPE_THRESHOLD) {
           swipeRight();
         } else if (gesture.dx < -SWIPE_THRESHOLD) {
@@ -208,29 +251,70 @@ export default function PetMatchScreen() {
     })
   ).current;
 
-  const swipeLeft = () => {
+  const swipeLeft = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
+    const pet = pets[currentIndex];
+
     Animated.timing(position, {
       toValue: { x: -width - 100, y: 0 },
       duration: 300,
       useNativeDriver: false,
-    }).start(() => nextCard());
+    }).start(async () => {
+      // Send pass to API (use owner id if available)
+      try {
+        if (pet.owner.id) {
+          await likesApi.sendLike(pet.owner.id, false);
+        }
+      } catch (error) {
+        logger.log('Failed to send pass');
+      }
+      nextCard();
+      setIsProcessing(false);
+    });
   };
 
-  const swipeRight = () => {
-    const pet = mockPets[currentIndex];
+  const swipeRight = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
+    const pet = pets[currentIndex];
     setLikedPets([...likedPets, pet.id]);
 
     Animated.timing(position, {
       toValue: { x: width + 100, y: 0 },
       duration: 300,
       useNativeDriver: false,
-    }).start(() => {
-      // Random match for demo
-      if (Math.random() > 0.5) {
-        setMatchedPet(pet);
-        setShowMatchModal(true);
+    }).start(async () => {
+      // Send like to API
+      try {
+        if (pet.owner.id) {
+          const response = await likesApi.sendLike(pet.owner.id, true);
+
+          // Check if it's a match
+          if (response.match) {
+            setMatchedPet(pet);
+            setMatchConversationId(response.match.conversationId);
+            setShowMatchModal(true);
+          }
+        } else {
+          // Fallback to random match for demo when no owner id
+          if (Math.random() > 0.5) {
+            setMatchedPet(pet);
+            setShowMatchModal(true);
+          }
+        }
+      } catch (error) {
+        logger.log('Failed to send like');
+        // Fallback to random match for demo
+        if (Math.random() > 0.5) {
+          setMatchedPet(pet);
+          setShowMatchModal(true);
+        }
       }
       nextCard();
+      setIsProcessing(false);
     });
   };
 
@@ -248,7 +332,7 @@ export default function PetMatchScreen() {
   };
 
   const handlePhotoTap = (direction: 'left' | 'right') => {
-    const pet = mockPets[currentIndex];
+    const pet = pets[currentIndex];
     if (!pet) return;
 
     if (direction === 'right' && currentPhotoIndex < pet.photos.length - 1) {
@@ -258,11 +342,11 @@ export default function PetMatchScreen() {
     }
   };
 
-  const currentPet = mockPets[currentIndex];
-  const nextPet = mockPets[currentIndex + 1];
+  const currentPet = pets[currentIndex];
+  const nextPet = pets[currentIndex + 1];
 
   // Empty state
-  if (currentIndex >= mockPets.length) {
+  if (currentIndex >= pets.length) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.emptyContainer}>
@@ -371,7 +455,7 @@ export default function PetMatchScreen() {
                   <Ionicons name="person" size={14} color="rgba(255,255,255,0.8)" />
                   <Text style={styles.metaText}>{currentPet.owner.name}</Text>
                   <Ionicons name="location" size={14} color="rgba(255,255,255,0.8)" style={{ marginLeft: 12 }} />
-                  <Text style={styles.metaText}>{currentPet.owner.distance}</Text>
+                  <Text style={styles.metaText}>{getPetDistance(currentPet)}</Text>
                 </View>
 
                 <View style={styles.traitsRow}>
@@ -406,14 +490,19 @@ export default function PetMatchScreen() {
 
       {/* Action Buttons */}
       <View style={styles.actionsContainer}>
-        <TouchableOpacity style={[styles.actionBtn, styles.nopeBtn]} onPress={swipeLeft}>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.nopeBtn]}
+          onPress={() => !isProcessing && swipeLeft()}
+          disabled={isProcessing}
+        >
           <Ionicons name="close" size={32} color="#EF4444" />
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.superBtn]}>
-          <Ionicons name="star" size={24} color="#3B82F6" />
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.likeBtn]} onPress={swipeRight}>
-          <Ionicons name="heart" size={32} color="#EC4899" />
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.likeBtn]}
+          onPress={() => !isProcessing && swipeRight()}
+          disabled={isProcessing}
+        >
+          <Ionicons name="heart" size={32} color="#F97316" />
         </TouchableOpacity>
       </View>
 
@@ -434,7 +523,7 @@ export default function PetMatchScreen() {
                 />
               </View>
               <View style={styles.matchHeart}>
-                <Ionicons name="heart" size={28} color="#EC4899" />
+                <Ionicons name="heart" size={28} color="#F97316" />
               </View>
               <View style={styles.matchImageContainer}>
                 <Image
@@ -447,13 +536,65 @@ export default function PetMatchScreen() {
             <Text style={styles.petMatchName}>{matchedPet?.name}</Text>
 
             <TouchableOpacity
-              style={styles.messageBtn}
-              onPress={() => {
-                setShowMatchModal(false);
-                navigation.navigate('Chat');
+              style={[styles.messageBtn, startingChat && styles.messageBtnDisabled]}
+              disabled={startingChat}
+              onPress={async () => {
+                if (!matchedPet?.owner?.id || startingChat) {
+                  return;
+                }
+
+                setStartingChat(true);
+
+                try {
+                  // Always create/get conversation before navigating
+                  let convId = matchConversationId;
+                  if (!convId) {
+                    logger.log('Creating conversation with owner');
+                    const response = await likesApi.createConversation(matchedPet.owner.id);
+                    logger.log('Conversation created');
+                    convId = response.conversationId || response.conversation?.id || response.id;
+                  }
+
+                  // Close modal first
+                  setShowMatchModal(false);
+                  setStartingChat(false);
+
+                  // Navigate to chat with the matched user info
+                  navigation.navigate('Chat', {
+                    conversationId: convId || `new-${matchedPet.owner.id}`,
+                    matchedUser: {
+                      id: matchedPet.owner.id,
+                      name: matchedPet.owner.name || matchedPet.name,
+                      type: 'owner' as const,
+                      photo: matchedPet.photos?.[0],
+                      online: true,
+                      verified: matchedPet.owner.verified || false,
+                    },
+                  });
+                } catch (error) {
+                  logger.log('Error creating conversation');
+                  setStartingChat(false);
+                  setShowMatchModal(false);
+                  // Still navigate to chat - the MessagesScreen will handle creating conversation on first message
+                  navigation.navigate('Chat', {
+                    conversationId: `new-${matchedPet.owner.id}`,
+                    matchedUser: {
+                      id: matchedPet.owner.id,
+                      name: matchedPet.owner.name || matchedPet.name,
+                      type: 'owner' as const,
+                      photo: matchedPet.photos?.[0],
+                      online: true,
+                      verified: matchedPet.owner.verified || false,
+                    },
+                  });
+                }
               }}
             >
-              <Text style={styles.messageBtnText}>Send Message</Text>
+              {startingChat ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Text style={styles.messageBtnText}>Send Message</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.keepSwipingBtn}
@@ -598,7 +739,7 @@ const styles = StyleSheet.create({
   serviceText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#EC4899',
+    color: '#F97316',
   },
   stamp: {
     position: 'absolute',
@@ -661,7 +802,7 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     borderWidth: 2,
-    borderColor: '#EC489930',
+    borderColor: '#F9731630',
   },
   emptyContainer: {
     flex: 1,
@@ -721,7 +862,7 @@ const styles = StyleSheet.create({
   matchTitle: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#EC4899',
+    color: '#F97316',
     marginBottom: 8,
   },
   matchSubtitle: {
@@ -741,7 +882,7 @@ const styles = StyleSheet.create({
     borderRadius: 45,
     overflow: 'hidden',
     borderWidth: 3,
-    borderColor: '#EC4899',
+    borderColor: '#F97316',
   },
   matchImage: {
     width: '100%',
@@ -756,7 +897,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#EC4899',
+    shadowColor: '#F97316',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -769,13 +910,16 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   messageBtn: {
-    backgroundColor: '#EC4899',
+    backgroundColor: '#F97316',
     paddingVertical: 16,
     paddingHorizontal: 40,
     borderRadius: 30,
     width: '100%',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  messageBtnDisabled: {
+    opacity: 0.7,
   },
   messageBtnText: {
     fontSize: 16,

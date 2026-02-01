@@ -216,7 +216,7 @@ export default function NotificationsScreen() {
       case 'order': return '#F59E0B';
       case 'review': return '#10B981';
       case 'system': return colors.primary;
-      case 'promotion': return '#EC4899';
+      case 'promotion': return '#F97316';
       default: return colors.gray[500];
     }
   };

@@ -7,6 +7,7 @@ import { View, StyleSheet } from 'react-native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 import { FEATURES } from '../config/featureFlags';
+import { getTabBarHeight, getTabBarFontSize, isTablet } from '../utils/responsive';
 
 // Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -36,6 +37,10 @@ import OrdersScreen from '../screens/OrdersScreen';
 import InventoryScreen from '../screens/InventoryScreen';
 import ProviderProfileScreen from '../screens/ProviderProfileScreen';
 import AppointmentsScreen from '../screens/AppointmentsScreen';
+import SubscriptionScreen from '../screens/SubscriptionScreen';
+import VendorCRMScreen from '../screens/VendorCRMScreen';
+import PawzrWalletScreen from '../screens/PawzrWalletScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -53,7 +58,9 @@ export type HomeStackParamList = {
   EditProfile: undefined;
   MyPets: undefined;
   Notifications: undefined;
-  // Hidden screens (Phase 2+)
+  Browse: undefined;
+  ProviderListings: undefined;
+  // Provider screens
   Calendar: undefined;
   AadhaarVerification: undefined;
   Analytics: undefined;
@@ -64,18 +71,32 @@ export type HomeStackParamList = {
   Inventory: undefined;
   ProviderProfile: { provider: any };
   Appointments: undefined;
+  // New screens
+  Subscription: undefined;
+  VendorCRM: undefined;
+  PawzrWallet: undefined;
 };
 
 export type MainTabParamList = {
   Home: undefined;
   Swipe: undefined;  // Role-based: Owners see LoverMatch, Lovers see PetMatch
   Chat: undefined;
+  ProfileTab: undefined;
+};
+
+export type ProfileStackParamList = {
   Profile: undefined;
+  PawzrWallet: undefined;
+  Subscription: undefined;
+  AadhaarVerification: undefined;
+  Settings: undefined;
+  Notifications: undefined;
 };
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
+const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 const MainTab = createBottomTabNavigator<MainTabParamList>();
 
 function AuthNavigator() {
@@ -92,10 +113,12 @@ function HomeNavigator() {
       <HomeStack.Screen name="Dashboard" component={DashboardScreen} />
       <HomeStack.Screen name="EditProfile" component={EditProfileScreen} />
       <HomeStack.Screen name="MyPets" component={MyPetsScreen} />
+      <HomeStack.Screen name="Browse" component={BrowseScreen} />
       {FEATURES.NOTIFICATIONS && (
         <HomeStack.Screen name="Notifications" component={NotificationsScreen} />
       )}
-      {/* Hidden screens - available when feature flags enabled */}
+      {/* Provider screens */}
+      {FEATURES.PROVIDER_LISTINGS && <HomeStack.Screen name="ProviderListings" component={ProviderListingsScreen} />}
       {FEATURES.CALENDAR && <HomeStack.Screen name="Calendar" component={CalendarScreen} />}
       {FEATURES.AADHAAR_VERIFICATION && <HomeStack.Screen name="AadhaarVerification" component={AadhaarVerificationScreen} />}
       {FEATURES.ANALYTICS && <HomeStack.Screen name="Analytics" component={AnalyticsScreen} />}
@@ -106,7 +129,25 @@ function HomeNavigator() {
       {FEATURES.INVENTORY && <HomeStack.Screen name="Inventory" component={InventoryScreen} />}
       {FEATURES.PROVIDER_PROFILE && <HomeStack.Screen name="ProviderProfile" component={ProviderProfileScreen} />}
       {FEATURES.APPOINTMENTS && <HomeStack.Screen name="Appointments" component={AppointmentsScreen} />}
+      {/* New platform screens */}
+      <HomeStack.Screen name="Subscription" component={SubscriptionScreen} />
+      <HomeStack.Screen name="VendorCRM" component={VendorCRMScreen} />
+      <HomeStack.Screen name="PawzrWallet" component={PawzrWalletScreen} />
     </HomeStack.Navigator>
+  );
+}
+
+// Profile Navigator - handles all profile-related screens
+function ProfileNavigator() {
+  return (
+    <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
+      <ProfileStack.Screen name="Profile" component={ProfileScreen} />
+      <ProfileStack.Screen name="PawzrWallet" component={PawzrWalletScreen} />
+      <ProfileStack.Screen name="Subscription" component={SubscriptionScreen} />
+      <ProfileStack.Screen name="AadhaarVerification" component={AadhaarVerificationScreen} />
+      <ProfileStack.Screen name="Settings" component={SettingsScreen} />
+      <ProfileStack.Screen name="Notifications" component={NotificationsScreen} />
+    </ProfileStack.Navigator>
   );
 }
 
@@ -123,10 +164,74 @@ function SwipeScreen() {
   return <LoverMatchScreen />;
 }
 
+// Role-specific colors
+const roleColors: Record<string, string> = {
+  OWNER: '#F97316',
+  LOVER: '#F97316',    // Orange (same as Owner)
+  VET: '#10B981',
+  GROOMER: '#8B5CF6',
+  SUPPLIER: '#3B82F6',
+};
+
 function MainNavigator() {
   const { user } = useAuth();
   const userRole = (user?.role || 'OWNER').toUpperCase();
   const isLover = userRole === 'LOVER';
+  const isOwner = userRole === 'OWNER';
+  const isProvider = ['VET', 'GROOMER', 'SUPPLIER'].includes(userRole);
+  const roleColor = roleColors[userRole] || colors.primary;
+
+  // Get appropriate label for the second tab based on role
+  const getSecondTabLabel = () => {
+    switch (userRole) {
+      case 'LOVER': return 'Match';
+      case 'OWNER': return 'Find';
+      case 'VET': return 'Schedule';
+      case 'GROOMER': return 'Bookings';
+      case 'SUPPLIER': return 'Orders';
+      default: return 'Activity';
+    }
+  };
+
+  // Get icon for second tab
+  const getSecondTabIcon = (focused: boolean) => {
+    switch (userRole) {
+      case 'LOVER':
+      case 'OWNER':
+        return (
+          <Ionicons
+            name="heart"
+            size={focused ? 28 : 24}
+            color={focused ? roleColor : colors.gray[400]}
+          />
+        );
+      case 'VET':
+      case 'GROOMER':
+        return (
+          <Ionicons
+            name={focused ? 'calendar' : 'calendar-outline'}
+            size={focused ? 26 : 24}
+            color={focused ? roleColor : colors.gray[400]}
+          />
+        );
+      case 'SUPPLIER':
+        return (
+          <Ionicons
+            name={focused ? 'receipt' : 'receipt-outline'}
+            size={focused ? 26 : 24}
+            color={focused ? roleColor : colors.gray[400]}
+          />
+        );
+      default:
+        return (
+          <Ionicons
+            name="heart"
+            size={focused ? 28 : 24}
+            color={focused ? roleColor : colors.gray[400]}
+          />
+        );
+    }
+  };
 
   return (
     <MainTab.Navigator
@@ -139,18 +244,11 @@ function MainNavigator() {
               iconName = focused ? 'home' : 'home-outline';
               break;
             case 'Swipe':
-              // Always use filled heart, orange when active
-              return (
-                <Ionicons
-                  name="heart"
-                  size={focused ? 28 : 24}
-                  color={focused ? '#FF6B35' : colors.gray[400]}
-                />
-              );
+              return getSecondTabIcon(focused);
             case 'Chat':
               iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
               break;
-            case 'Profile':
+            case 'ProfileTab':
               iconName = focused ? 'person' : 'person-outline';
               break;
             default:
@@ -158,27 +256,28 @@ function MainNavigator() {
           }
 
           return (
-            <View style={focused ? styles.activeTab : undefined}>
+            <View style={focused ? [styles.activeTab, { backgroundColor: `${roleColor}15` }] : undefined}>
               <Ionicons name={iconName} size={focused ? 26 : 24} color={color} />
             </View>
           );
         },
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: roleColor,
         tabBarInactiveTintColor: colors.gray[400],
         headerShown: false,
         tabBarShowLabel: true,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: getTabBarFontSize(),
           fontWeight: '600',
           marginTop: -2,
-          marginBottom: 6,
+          marginBottom: isTablet() ? 8 : 6,
         },
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.gray[100],
           borderTopWidth: 1,
-          height: 85,
-          paddingTop: 10,
+          height: getTabBarHeight(),
+          paddingTop: isTablet() ? 12 : 10,
+          paddingHorizontal: isTablet() ? 40 : 0,
           shadowColor: colors.black,
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.08,
@@ -194,13 +293,13 @@ function MainNavigator() {
         options={{ tabBarLabel: 'Home' }}
       />
 
-      {/* Swipe - Role-based content */}
+      {/* Second Tab - Role-based content */}
       <MainTab.Screen
         name="Swipe"
-        component={SwipeScreen}
+        component={isProvider ? CalendarOrOrdersScreen : SwipeScreen}
         options={{
-          tabBarLabel: isLover ? 'Match' : 'Find',
-          tabBarActiveTintColor: '#FF6B35',
+          tabBarLabel: getSecondTabLabel(),
+          tabBarActiveTintColor: roleColor,
         }}
       />
 
@@ -212,7 +311,7 @@ function MainNavigator() {
           tabBarLabel: 'Chat',
           tabBarBadge: 3,
           tabBarBadgeStyle: {
-            backgroundColor: colors.primary,
+            backgroundColor: roleColor,
             fontSize: 10,
             minWidth: 18,
             height: 18,
@@ -223,12 +322,23 @@ function MainNavigator() {
 
       {/* Profile */}
       <MainTab.Screen
-        name="Profile"
-        component={ProfileScreen}
+        name="ProfileTab"
+        component={ProfileNavigator}
         options={{ tabBarLabel: 'Profile' }}
       />
     </MainTab.Navigator>
   );
+}
+
+// Provider's second tab - Calendar for Vet/Groomer, Orders for Supplier
+function CalendarOrOrdersScreen() {
+  const { user } = useAuth();
+  const userRole = (user?.role || 'OWNER').toUpperCase();
+
+  if (userRole === 'SUPPLIER') {
+    return <OrdersScreen />;
+  }
+  return <CalendarScreen />;
 }
 
 export default function AppNavigator() {

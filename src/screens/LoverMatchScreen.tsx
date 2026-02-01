@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,24 @@ import {
   TouchableOpacity,
   Image,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { likesApi, swipeApi } from '../lib/api';
+import { useLocation } from '../hooks/useLocation';
+import logger from '../lib/logger';
+import { getDistanceString } from '../utils/distance';
+import { isTablet, getCardDimensions } from '../utils/responsive';
 
 const { width, height } = Dimensions.get('window');
-const CARD_WIDTH = width - 24;
-const CARD_HEIGHT = height * 0.72;
+// Use responsive card dimensions
+const cardDims = getCardDimensions();
+const CARD_WIDTH = cardDims.width;
+const CARD_HEIGHT = cardDims.height;
 const SWIPE_THRESHOLD = 120;
 
 interface PetLover {
@@ -26,7 +34,9 @@ interface PetLover {
   name: string;
   age: number;
   photos: string[];
-  distance: string;
+  distance?: string;
+  latitude?: number;
+  longitude?: number;
   rating: number;
   reviews: number;
   verified: boolean;
@@ -127,14 +137,33 @@ const mockLovers: PetLover[] = [
 export default function LoverMatchScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { location } = useLocation();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [likedLovers, setLikedLovers] = useState<string[]>([]);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [matchedLover, setMatchedLover] = useState<PetLover | null>(null);
+  const [matchConversationId, setMatchConversationId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [lovers, setLovers] = useState<PetLover[]>(mockLovers);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [startingChat, setStartingChat] = useState(false);
 
   const position = useRef(new Animated.ValueXY()).current;
+
+  // Helper function to get distance string for a lover
+  const getLoverDistance = (lover: PetLover): string => {
+    if (lover.latitude && lover.longitude && location) {
+      return getDistanceString(
+        location.latitude,
+        location.longitude,
+        lover.latitude,
+        lover.longitude
+      );
+    }
+    return lover.distance || 'Distance unknown';
+  };
 
   const rotation = position.x.interpolate({
     inputRange: [-width / 2, 0, width / 2],
@@ -162,11 +191,24 @@ export default function LoverMatchScreen() {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        // Only capture horizontal swipes (not vertical scrolls or taps)
+        return Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
+      },
+      onMoveShouldSetPanResponderCapture: (_, gesture) => {
+        // Capture the gesture if it's clearly a horizontal swipe
+        return Math.abs(gesture.dx) > 20 && Math.abs(gesture.dx) > Math.abs(gesture.dy * 1.5);
+      },
+      onPanResponderGrant: () => {
+        // Reset position when gesture starts
+        position.setOffset({ x: 0, y: 0 });
+      },
       onPanResponderMove: (_, gesture) => {
         position.setValue({ x: gesture.dx, y: gesture.dy * 0.5 });
       },
       onPanResponderRelease: (_, gesture) => {
+        position.flattenOffset();
         if (gesture.dx > SWIPE_THRESHOLD) {
           swipeRight();
         } else if (gesture.dx < -SWIPE_THRESHOLD) {
@@ -178,29 +220,60 @@ export default function LoverMatchScreen() {
     })
   ).current;
 
-  const swipeLeft = () => {
+  const swipeLeft = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
+    const lover = lovers[currentIndex];
+
     Animated.timing(position, {
       toValue: { x: -width - 100, y: 0 },
       duration: 300,
       useNativeDriver: false,
-    }).start(() => nextCard());
+    }).start(async () => {
+      // Send pass to API
+      try {
+        await likesApi.sendLike(lover.id, false);
+      } catch (error) {
+        logger.log('Failed to send pass:', error);
+      }
+      nextCard();
+      setIsProcessing(false);
+    });
   };
 
-  const swipeRight = () => {
-    const lover = mockLovers[currentIndex];
+  const swipeRight = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
+    const lover = lovers[currentIndex];
     setLikedLovers([...likedLovers, lover.id]);
 
     Animated.timing(position, {
       toValue: { x: width + 100, y: 0 },
       duration: 300,
       useNativeDriver: false,
-    }).start(() => {
-      // Random match for demo
-      if (Math.random() > 0.5) {
-        setMatchedLover(lover);
-        setShowMatchModal(true);
+    }).start(async () => {
+      // Send like to API
+      try {
+        const response = await likesApi.sendLike(lover.id, true);
+
+        // Check if it's a match
+        if (response.match) {
+          setMatchedLover(lover);
+          setMatchConversationId(response.match.conversationId);
+          setShowMatchModal(true);
+        }
+      } catch (error) {
+        logger.log('Failed to send like:', error);
+        // Fallback to random match for demo
+        if (Math.random() > 0.5) {
+          setMatchedLover(lover);
+          setShowMatchModal(true);
+        }
       }
       nextCard();
+      setIsProcessing(false);
     });
   };
 
@@ -218,7 +291,7 @@ export default function LoverMatchScreen() {
   };
 
   const handlePhotoTap = (direction: 'left' | 'right') => {
-    const lover = mockLovers[currentIndex];
+    const lover = lovers[currentIndex];
     if (!lover) return;
 
     if (direction === 'right' && currentPhotoIndex < lover.photos.length - 1) {
@@ -228,11 +301,11 @@ export default function LoverMatchScreen() {
     }
   };
 
-  const currentLover = mockLovers[currentIndex];
-  const nextLover = mockLovers[currentIndex + 1];
+  const currentLover = lovers[currentIndex];
+  const nextLover = lovers[currentIndex + 1];
 
   // Empty state
-  if (currentIndex >= mockLovers.length) {
+  if (currentIndex >= lovers.length) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.emptyContainer}>
@@ -338,7 +411,7 @@ export default function LoverMatchScreen() {
 
                 <View style={styles.metaRow}>
                   <Ionicons name="location" size={14} color="rgba(255,255,255,0.8)" />
-                  <Text style={styles.metaText}>{currentLover.distance}</Text>
+                  <Text style={styles.metaText}>{getLoverDistance(currentLover)}</Text>
                   <Ionicons name="star" size={14} color="#F59E0B" style={{ marginLeft: 12 }} />
                   <Text style={styles.metaText}>{currentLover.rating} ({currentLover.reviews})</Text>
                 </View>
@@ -373,14 +446,19 @@ export default function LoverMatchScreen() {
 
       {/* Action Buttons */}
       <View style={styles.actionsContainer}>
-        <TouchableOpacity style={[styles.actionBtn, styles.nopeBtn]} onPress={swipeLeft}>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.nopeBtn]}
+          onPress={() => !isProcessing && swipeLeft()}
+          disabled={isProcessing}
+        >
           <Ionicons name="close" size={32} color="#EF4444" />
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.superBtn]}>
-          <Ionicons name="star" size={24} color="#3B82F6" />
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.likeBtn]} onPress={swipeRight}>
-          <Ionicons name="heart" size={32} color="#EC4899" />
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.likeBtn]}
+          onPress={() => !isProcessing && swipeRight()}
+          disabled={isProcessing}
+        >
+          <Ionicons name="heart" size={32} color="#F97316" />
         </TouchableOpacity>
       </View>
 
@@ -401,7 +479,7 @@ export default function LoverMatchScreen() {
                 />
               </View>
               <View style={styles.matchHeart}>
-                <Ionicons name="heart" size={28} color="#EC4899" />
+                <Ionicons name="heart" size={28} color="#F97316" />
               </View>
               <View style={styles.matchImageContainer}>
                 <Image
@@ -412,13 +490,65 @@ export default function LoverMatchScreen() {
             </View>
 
             <TouchableOpacity
-              style={styles.messageBtn}
-              onPress={() => {
-                setShowMatchModal(false);
-                navigation.navigate('Messages');
+              style={[styles.messageBtn, startingChat && styles.messageBtnDisabled]}
+              disabled={startingChat}
+              onPress={async () => {
+                if (!matchedLover || startingChat) {
+                  return;
+                }
+
+                setStartingChat(true);
+
+                try {
+                  // Always create/get conversation before navigating
+                  let convId = matchConversationId;
+                  if (!convId) {
+                    logger.log('Creating conversation with user:', matchedLover.id);
+                    const response = await likesApi.createConversation(matchedLover.id);
+                    logger.log('Create conversation response:', response);
+                    convId = response.conversationId || response.conversation?.id || response.id;
+                  }
+
+                  // Close modal first
+                  setShowMatchModal(false);
+                  setStartingChat(false);
+
+                  // Navigate to chat with the matched user info
+                  navigation.navigate('Chat', {
+                    conversationId: convId || `new-${matchedLover.id}`,
+                    matchedUser: {
+                      id: matchedLover.id,
+                      name: matchedLover.name,
+                      type: 'lover' as const,
+                      photo: matchedLover.photos[0],
+                      online: true,
+                      verified: matchedLover.verified,
+                    },
+                  });
+                } catch (error) {
+                  logger.log('Error creating conversation:', error);
+                  setStartingChat(false);
+                  setShowMatchModal(false);
+                  // Still navigate to chat - the MessagesScreen will handle creating conversation on first message
+                  navigation.navigate('Chat', {
+                    conversationId: `new-${matchedLover.id}`,
+                    matchedUser: {
+                      id: matchedLover.id,
+                      name: matchedLover.name,
+                      type: 'lover' as const,
+                      photo: matchedLover.photos[0],
+                      online: true,
+                      verified: matchedLover.verified,
+                    },
+                  });
+                }
               }}
             >
-              <Text style={styles.messageBtnText}>Send Message</Text>
+              {startingChat ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Text style={styles.messageBtnText}>Send Message</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.keepSwipingBtn}
@@ -614,7 +744,7 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     borderWidth: 2,
-    borderColor: '#EC489930',
+    borderColor: '#F9731630',
   },
   emptyContainer: {
     flex: 1,
@@ -674,7 +804,7 @@ const styles = StyleSheet.create({
   matchTitle: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#EC4899',
+    color: '#F97316',
     marginBottom: 8,
   },
   matchSubtitle: {
@@ -694,7 +824,7 @@ const styles = StyleSheet.create({
     borderRadius: 45,
     overflow: 'hidden',
     borderWidth: 3,
-    borderColor: '#EC4899',
+    borderColor: '#F97316',
   },
   matchImage: {
     width: '100%',
@@ -709,20 +839,23 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#EC4899',
+    shadowColor: '#F97316',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
   messageBtn: {
-    backgroundColor: '#EC4899',
+    backgroundColor: '#F97316',
     paddingVertical: 16,
     paddingHorizontal: 40,
     borderRadius: 30,
     width: '100%',
     alignItems: 'center',
     marginBottom: 12,
+  },
+  messageBtnDisabled: {
+    opacity: 0.7,
   },
   messageBtnText: {
     fontSize: 16,

@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
 import { colors } from '../../theme/colors';
+import logger from '../../lib/logger';
 
 interface Service {
   name: string;
@@ -117,7 +118,7 @@ export default function GroomerOnboardingScreen() {
         routes: [{ name: 'Main' }],
       });
     } catch (error) {
-      console.error('Error saving profile:', error);
+      logger.error('Error saving profile:', error);
     } finally {
       setIsLoading(false);
     }

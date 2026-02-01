@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Modal,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -17,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { aadhaarApi } from '../lib/aadhaarApi';
+import logger from '../lib/logger';
 
 type VerificationStep = 'enter_aadhaar' | 'verify_otp' | 'success' | 'already_verified';
 
@@ -36,15 +37,25 @@ export default function AadhaarVerificationScreen({
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   const [maskedMobile, setMaskedMobile] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [verificationData, setVerificationData] = useState<any>(null);
 
   const otpInputRefs = useRef<(TextInput | null)[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      aadhaarApi.clearTransaction();
+    };
+  }, []);
 
   const formatAadhaarNumber = (text: string) => {
-    // Remove non-digits
     const cleaned = text.replace(/\D/g, '');
-    // Limit to 12 digits
     const limited = cleaned.slice(0, 12);
-    // Format as XXXX XXXX XXXX
     const parts = [];
     for (let i = 0; i < limited.length; i += 4) {
       parts.push(limited.slice(i, i + 4));
@@ -54,6 +65,7 @@ export default function AadhaarVerificationScreen({
 
   const handleAadhaarChange = (text: string) => {
     setAadhaarNumber(formatAadhaarNumber(text));
+    setErrorMessage(null);
   };
 
   const getCleanAadhaar = () => {
@@ -63,12 +75,11 @@ export default function AadhaarVerificationScreen({
   const validateAadhaar = () => {
     const clean = getCleanAadhaar();
     if (clean.length !== 12) {
-      Alert.alert('Invalid Aadhaar', 'Please enter a valid 12-digit Aadhaar number');
+      setErrorMessage('Please enter a valid 12-digit Aadhaar number');
       return false;
     }
-    // Basic validation - first digit cannot be 0 or 1
     if (clean[0] === '0' || clean[0] === '1') {
-      Alert.alert('Invalid Aadhaar', 'Please enter a valid Aadhaar number');
+      setErrorMessage('Please enter a valid Aadhaar number');
       return false;
     }
     return true;
@@ -78,16 +89,23 @@ export default function AadhaarVerificationScreen({
     if (!validateAadhaar()) return;
 
     setLoading(true);
-    try {
-      // Simulate API call to send OTP
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    setErrorMessage(null);
 
-      // Mock response - would come from backend
-      setMaskedMobile('XXXXXX7890');
-      setStep('verify_otp');
-      startResendTimer();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+    try {
+      const response = await aadhaarApi.requestOtp(getCleanAadhaar());
+
+      if (response.success) {
+        setMaskedMobile(response.maskedMobile || 'XXXXXX****');
+        setStep('verify_otp');
+        startResendTimer();
+        logger.log('Aadhaar OTP sent successfully');
+      } else {
+        setErrorMessage(response.message || 'Failed to send OTP. Please try again.');
+        logger.error('Aadhaar OTP request failed');
+      }
+    } catch (error: any) {
+      setErrorMessage(error.message || 'Failed to send OTP. Please check your connection.');
+      logger.error('Aadhaar OTP request error');
     } finally {
       setLoading(false);
     }
@@ -95,10 +113,15 @@ export default function AadhaarVerificationScreen({
 
   const startResendTimer = () => {
     setResendTimer(30);
-    const interval = setInterval(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    timerRef.current = setInterval(() => {
       setResendTimer((prev) => {
         if (prev <= 1) {
-          clearInterval(interval);
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+          }
           return 0;
         }
         return prev - 1;
@@ -114,8 +137,8 @@ export default function AadhaarVerificationScreen({
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
+    setErrorMessage(null);
 
-    // Auto-focus next input
     if (value && index < 5) {
       otpInputRefs.current[index + 1]?.focus();
     }
@@ -130,26 +153,36 @@ export default function AadhaarVerificationScreen({
   const handleVerifyOtp = async () => {
     const otpString = otp.join('');
     if (otpString.length !== 6) {
-      Alert.alert('Invalid OTP', 'Please enter the complete 6-digit OTP');
+      setErrorMessage('Please enter the complete 6-digit OTP');
       return;
     }
 
     setLoading(true);
+    setErrorMessage(null);
+
     try {
-      // Simulate API call to verify OTP
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const response = await aadhaarApi.verifyOtp(otpString);
 
-      // Mock successful verification
-      setStep('success');
+      if (response.success && response.verified) {
+        setVerificationData(response.data);
+        setStep('success');
+        logger.log('Aadhaar verification successful');
 
-      // Call callback if provided
-      if (onVerificationComplete) {
-        setTimeout(() => {
-          onVerificationComplete();
-        }, 2000);
+        if (onVerificationComplete) {
+          setTimeout(() => {
+            onVerificationComplete();
+          }, 2000);
+        }
+      } else {
+        setErrorMessage(response.message || 'Invalid OTP. Please try again.');
+        // Clear OTP on error
+        setOtp(['', '', '', '', '', '']);
+        otpInputRefs.current[0]?.focus();
+        logger.error('Aadhaar verification failed');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Invalid OTP. Please try again.');
+    } catch (error: any) {
+      setErrorMessage(error.message || 'Verification failed. Please try again.');
+      logger.error('Aadhaar verification error');
     } finally {
       setLoading(false);
     }
@@ -159,19 +192,26 @@ export default function AadhaarVerificationScreen({
     if (resendTimer > 0) return;
 
     setLoading(true);
+    setErrorMessage(null);
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      startResendTimer();
-      Alert.alert('OTP Sent', 'A new OTP has been sent to your registered mobile number');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to resend OTP');
+      const response = await aadhaarApi.resendOtp(getCleanAadhaar());
+
+      if (response.success) {
+        startResendTimer();
+        setOtp(['', '', '', '', '', '']);
+        Alert.alert('OTP Sent', 'A new OTP has been sent to your registered mobile number');
+      } else {
+        setErrorMessage(response.message || 'Failed to resend OTP');
+      }
+    } catch (error: any) {
+      setErrorMessage(error.message || 'Failed to resend OTP');
     } finally {
       setLoading(false);
     }
   };
 
   const handleOpenAadhaarApp = async () => {
-    // Try to open mAadhaar app first (iOS and Android)
     const mAadhaarScheme = Platform.OS === 'ios'
       ? 'maadhaar://'
       : 'com.uidai.maadhaar://';
@@ -181,12 +221,10 @@ export default function AadhaarVerificationScreen({
     const appStoreLink = 'https://apps.apple.com/in/app/maadhaar/id1435469474';
 
     try {
-      // Try to open mAadhaar app
       const canOpen = await Linking.canOpenURL(mAadhaarScheme);
       if (canOpen) {
         await Linking.openURL(mAadhaarScheme);
       } else {
-        // App not installed - show options
         Alert.alert(
           'mAadhaar App',
           'You can verify your Aadhaar using the official mAadhaar app or the UIDAI website.',
@@ -207,7 +245,6 @@ export default function AadhaarVerificationScreen({
         );
       }
     } catch (error) {
-      // Fallback to website
       Linking.openURL(uidaiWebsite);
     }
   };
@@ -231,7 +268,7 @@ export default function AadhaarVerificationScreen({
 
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Aadhaar Number</Text>
-        <View style={styles.aadhaarInputWrapper}>
+        <View style={[styles.aadhaarInputWrapper, errorMessage && styles.inputError]}>
           <TextInput
             style={styles.aadhaarInput}
             placeholder="XXXX XXXX XXXX"
@@ -239,15 +276,19 @@ export default function AadhaarVerificationScreen({
             value={aadhaarNumber}
             onChangeText={handleAadhaarChange}
             keyboardType="number-pad"
-            maxLength={14} // 12 digits + 2 spaces
+            maxLength={14}
           />
           {getCleanAadhaar().length === 12 && (
             <Ionicons name="checkmark-circle" size={24} color="#10B981" />
           )}
         </View>
-        <Text style={styles.helperText}>
-          Your Aadhaar details are encrypted and securely stored
-        </Text>
+        {errorMessage ? (
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        ) : (
+          <Text style={styles.helperText}>
+            Your Aadhaar details are encrypted and securely stored
+          </Text>
+        )}
       </View>
 
       <View style={styles.infoCard}>
@@ -260,7 +301,7 @@ export default function AadhaarVerificationScreen({
       <TouchableOpacity
         style={[
           styles.primaryBtn,
-          getCleanAadhaar().length !== 12 && styles.primaryBtnDisabled
+          (getCleanAadhaar().length !== 12 || loading) && styles.primaryBtnDisabled
         ]}
         onPress={handleSendOtp}
         disabled={loading || getCleanAadhaar().length !== 12}
@@ -286,7 +327,12 @@ export default function AadhaarVerificationScreen({
 
   const renderVerifyOtp = () => (
     <>
-      <TouchableOpacity style={styles.backBtn} onPress={() => setStep('enter_aadhaar')}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => {
+        setStep('enter_aadhaar');
+        setOtp(['', '', '', '', '', '']);
+        setErrorMessage(null);
+        aadhaarApi.clearTransaction();
+      }}>
         <Ionicons name="arrow-back" size={24} color={colors.gray[700]} />
       </TouchableOpacity>
 
@@ -305,10 +351,11 @@ export default function AadhaarVerificationScreen({
         {otp.map((digit, index) => (
           <TextInput
             key={index}
-            ref={(ref) => (otpInputRefs.current[index] = ref)}
+            ref={(ref) => { otpInputRefs.current[index] = ref; }}
             style={[
               styles.otpInput,
-              digit && styles.otpInputFilled
+              digit && styles.otpInputFilled,
+              errorMessage && styles.otpInputError
             ]}
             value={digit}
             onChangeText={(value) => handleOtpChange(value, index)}
@@ -319,6 +366,10 @@ export default function AadhaarVerificationScreen({
           />
         ))}
       </View>
+
+      {errorMessage && (
+        <Text style={styles.otpErrorText}>{errorMessage}</Text>
+      )}
 
       <View style={styles.resendContainer}>
         {resendTimer > 0 ? (
@@ -333,7 +384,7 @@ export default function AadhaarVerificationScreen({
       <TouchableOpacity
         style={[
           styles.primaryBtn,
-          otp.join('').length !== 6 && styles.primaryBtnDisabled
+          (otp.join('').length !== 6 || loading) && styles.primaryBtnDisabled
         ]}
         onPress={handleVerifyOtp}
         disabled={loading || otp.join('').length !== 6}
@@ -408,7 +459,7 @@ export default function AadhaarVerificationScreen({
             <Ionicons name="shield-checkmark" size={24} color="#10B981" />
             <View style={styles.verifiedInfo}>
               <Text style={styles.verifiedLabel}>Aadhaar Verified</Text>
-              <Text style={styles.verifiedValue}>Verified on Jan 10, 2024</Text>
+              <Text style={styles.verifiedValue}>Verification Complete</Text>
             </View>
             <View style={styles.verifiedBadge}>
               <Text style={styles.verifiedBadgeText}>Verified</Text>
@@ -517,6 +568,9 @@ const styles = StyleSheet.create({
     borderColor: colors.gray[200],
     paddingHorizontal: 16,
   },
+  inputError: {
+    borderColor: '#EF4444',
+  },
   aadhaarInput: {
     flex: 1,
     fontSize: 20,
@@ -528,6 +582,11 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 12,
     color: colors.gray[500],
+    marginTop: 8,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#EF4444',
     marginTop: 8,
   },
   infoCard: {
@@ -578,7 +637,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 10,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   otpInput: {
     width: 48,
@@ -595,6 +654,15 @@ const styles = StyleSheet.create({
   otpInputFilled: {
     borderColor: colors.primary,
     backgroundColor: `${colors.primary}05`,
+  },
+  otpInputError: {
+    borderColor: '#EF4444',
+  },
+  otpErrorText: {
+    fontSize: 13,
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   resendContainer: {
     alignItems: 'center',

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  ScrollView,
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,25 +13,64 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
+
+// Role-specific colors
+const roleColors = {
+  OWNER: '#F97316',    // Orange
+  LOVER: '#F97316',    // Orange (same as Owner)
+  VET: '#10B981',      // Green
+  GROOMER: '#8B5CF6',  // Purple
+  SUPPLIER: '#3B82F6', // Blue
+};
 
 const roles = [
   {
     id: 'OWNER',
     title: 'Pet Owner',
     subtitle: 'Find love for your pet',
-    description: 'Connect with pet lovers, find playdates, and discover amazing care for your furry friend',
+    description: 'Connect with pet lovers, find playdates, and discover amazing care',
     icon: 'paw',
     emoji: '🐕',
+    color: roleColors.OWNER,
   },
   {
     id: 'LOVER',
     title: 'Pet Lover',
     subtitle: 'Meet adorable pets',
-    description: 'Swipe, match, and connect with pets looking for walks, playtime, and cuddles',
+    description: 'Swipe, match, and connect with pets for walks and cuddles',
     icon: 'heart',
     emoji: '💕',
+    color: roleColors.LOVER,
+  },
+  {
+    id: 'VET',
+    title: 'Veterinarian',
+    subtitle: 'Grow your practice',
+    description: 'List your clinic, manage appointments, and reach pet owners',
+    icon: 'medkit',
+    emoji: '🏥',
+    color: roleColors.VET,
+  },
+  {
+    id: 'GROOMER',
+    title: 'Pet Groomer',
+    subtitle: 'Showcase your skills',
+    description: 'List grooming services, manage bookings, and grow your business',
+    icon: 'cut',
+    emoji: '✂️',
+    color: roleColors.GROOMER,
+  },
+  {
+    id: 'SUPPLIER',
+    title: 'Pet Supplier',
+    subtitle: 'Sell pet products',
+    description: 'List products, manage inventory, and reach pet owners nearby',
+    icon: 'storefront',
+    emoji: '🏪',
+    color: roleColors.SUPPLIER,
   },
 ];
 
@@ -48,65 +88,76 @@ export default function RoleSelectionScreen() {
       await updateUserRole(selectedRole);
       navigation.replace('Onboarding', { role: selectedRole });
     } catch (error) {
-      console.error('Error updating role:', error);
+      logger.error('Error updating role:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const selectedRoleData = roles.find(r => r.id === selectedRole);
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>pawzr</Text>
-          </View>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.logo}>
+          <Text style={styles.logoText}>pawzr</Text>
         </View>
+        <Text style={styles.title}>Join as</Text>
+        <Text style={styles.subtitle}>Choose how you want to use Pawzr</Text>
+      </View>
 
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>How do you want{'\n'}to use Pawzr?</Text>
-        </View>
-
-        {/* Role Cards - Bumble Style */}
-        <View style={styles.cardsContainer}>
-          {roles.map((role) => (
+      {/* Role Cards */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.cardsContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {roles.map((role) => {
+          const isSelected = selectedRole === role.id;
+          return (
             <TouchableOpacity
               key={role.id}
               style={[
                 styles.card,
-                selectedRole === role.id && styles.cardSelected,
+                isSelected && { borderColor: role.color, backgroundColor: `${role.color}08` },
               ]}
               onPress={() => setSelectedRole(role.id)}
               activeOpacity={0.8}
             >
-              <View style={styles.cardContent}>
+              <View style={[styles.iconContainer, { backgroundColor: `${role.color}15` }]}>
                 <Text style={styles.emoji}>{role.emoji}</Text>
+              </View>
+
+              <View style={styles.cardTextContent}>
                 <Text style={styles.cardTitle}>{role.title}</Text>
-                <Text style={styles.cardSubtitle}>{role.subtitle}</Text>
+                <Text style={[styles.cardSubtitle, { color: role.color }]}>{role.subtitle}</Text>
                 <Text style={styles.cardDescription}>{role.description}</Text>
               </View>
 
               {/* Selection indicator */}
               <View style={[
                 styles.checkCircle,
-                selectedRole === role.id && styles.checkCircleSelected,
+                isSelected && { backgroundColor: role.color, borderColor: role.color },
               ]}>
-                {selectedRole === role.id && (
-                  <Ionicons name="checkmark" size={18} color={colors.white} />
+                {isSelected && (
+                  <Ionicons name="checkmark" size={16} color={colors.white} />
                 )}
               </View>
             </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+          );
+        })}
+
+        {/* Bottom spacing */}
+        <View style={{ height: 100 }} />
+      </ScrollView>
 
       {/* Footer */}
       <View style={styles.footer}>
         <TouchableOpacity
           style={[
             styles.continueButton,
+            selectedRoleData && { backgroundColor: selectedRoleData.color },
             !selectedRole && styles.continueButtonDisabled,
           ]}
           onPress={handleContinue}
@@ -115,7 +166,9 @@ export default function RoleSelectionScreen() {
           {isLoading ? (
             <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.continueButtonText}>Continue</Text>
+            <Text style={styles.continueButtonText}>
+              {selectedRole ? `Continue as ${selectedRoleData?.title}` : 'Select a role'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -128,113 +181,117 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  content: {
-    flex: 1,
+  header: {
     paddingHorizontal: 24,
-  },
-  logoContainer: {
+    paddingTop: 16,
+    paddingBottom: 20,
     alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 10,
   },
   logo: {
     backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    marginBottom: 20,
   },
   logoText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '800',
     color: colors.white,
     letterSpacing: -0.5,
-  },
-  header: {
-    paddingTop: 30,
-    paddingBottom: 30,
-    alignItems: 'center',
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: colors.gray[900],
-    textAlign: 'center',
-    lineHeight: 36,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: colors.gray[500],
+  },
+  scrollView: {
+    flex: 1,
   },
   cardsContainer: {
-    gap: 16,
+    paddingHorizontal: 20,
+    gap: 12,
   },
   card: {
     backgroundColor: colors.white,
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 3,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 2,
     borderColor: colors.gray[100],
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  cardSelected: {
-    borderColor: colors.primary,
-    backgroundColor: '#FFF7ED',
-  },
-  cardContent: {
+  iconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 14,
   },
   emoji: {
-    fontSize: 48,
-    marginBottom: 12,
+    fontSize: 28,
+  },
+  cardTextContent: {
+    flex: 1,
+    paddingRight: 30,
   },
   cardTitle: {
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '700',
     color: colors.gray[900],
-    marginBottom: 4,
+    marginBottom: 2,
   },
   cardSubtitle: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.primary,
-    marginBottom: 12,
+    marginBottom: 4,
   },
   cardDescription: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.gray[500],
-    textAlign: 'center',
-    lineHeight: 20,
-    paddingHorizontal: 10,
+    lineHeight: 16,
   },
   checkCircle: {
     position: 'absolute',
     top: 16,
     right: 16,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: colors.gray[300],
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkCircleSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
   footer: {
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 30,
+    backgroundColor: colors.background,
   },
   continueButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 18,
-    borderRadius: 30,
+    backgroundColor: colors.gray[300],
+    paddingVertical: 16,
+    borderRadius: 28,
     alignItems: 'center',
-    shadowColor: colors.primary,
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 4,
   },
@@ -244,7 +301,7 @@ const styles = StyleSheet.create({
   },
   continueButtonText: {
     color: colors.white,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
   },
 });

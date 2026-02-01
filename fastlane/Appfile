@@ -1,0 +1,4 @@
+app_identifier("com.pawzr.app")
+apple_id(ENV["APPLE_ID"] || "")
+itc_team_id("")
+team_id("7MSNDK4L87")

@@ -1,12 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { authApi } from './api';
+import logger from './logger';
+import ENV from '../config/env';
 
-WebBrowser.maybeCompleteAuthSession();
+// Try to import native Google Sign-In, fallback gracefully if not available
+let GoogleSignin: any = null;
+let statusCodes: any = {};
+try {
+  const googleSignIn = require('@react-native-google-signin/google-signin');
+  GoogleSignin = googleSignIn.GoogleSignin;
+  statusCodes = googleSignIn.statusCodes;
+} catch (e) {
+  logger.log('Native Google Sign-In not available, using fallback');
+}
 
 interface Pet {
   id: string;
@@ -72,24 +81,32 @@ interface AuthContextType {
   updateUserRole: (role: string) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   updateUserProfile: (updates: Partial<User>) => Promise<void>;
+  signInWithDemoAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const GOOGLE_WEB_CLIENT_ID = '1094158533320-aumh0qgrr06o0o17umlulthgj3m72dlq.apps.googleusercontent.com';
-const GOOGLE_IOS_CLIENT_ID = '1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1.apps.googleusercontent.com';
+// Use environment configuration for OAuth credentials
+const GOOGLE_WEB_CLIENT_ID = ENV.GOOGLE_WEB_CLIENT_ID || '1094158533320-aumh0qgrr06o0o17umlulthgj3m72dlq.apps.googleusercontent.com';
+const GOOGLE_IOS_CLIENT_ID = ENV.GOOGLE_IOS_CLIENT_ID || '1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1.apps.googleusercontent.com';
+
+// Configure Google Sign-In if available
+if (GoogleSignin) {
+  try {
+    GoogleSignin.configure({
+      iosClientId: GOOGLE_IOS_CLIENT_ID,
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      offlineAccess: false,
+    });
+  } catch (e) {
+    logger.log('Failed to configure Google Sign-In:', e);
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAppleAuthAvailable, setIsAppleAuthAvailable] = useState(false);
-
-  // Google Auth - using Expo proxy for Expo Go compatibility
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
-    iosClientId: GOOGLE_IOS_CLIENT_ID,
-    webClientId: GOOGLE_WEB_CLIENT_ID,
-  });
 
   // Check Apple Auth availability on iOS
   useEffect(() => {
@@ -98,81 +115,103 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Check for stored user on mount
+  // Check for stored user on mount with timeout fallback
   useEffect(() => {
-    checkStoredUser();
-  }, []);
+    // Safety timeout - never stay loading forever (reduced to 2 seconds for faster startup)
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        logger.log('Auth timeout - forcing loading complete');
+        setIsLoading(false);
+      }
+    }, 2000);
 
-  // Handle Google auth response
-  useEffect(() => {
-    if (response?.type === 'success') {
-      handleGoogleSuccess(response.authentication);
-    }
-  }, [response]);
+    // Start checking stored user immediately
+    checkStoredUser();
+
+    return () => clearTimeout(timeout);
+  }, []);
 
   async function checkStoredUser() {
     try {
-      const storedUser = await AsyncStorage.getItem('user');
+      logger.log('Checking stored user...');
+
+      // Add timeout to AsyncStorage read (1 second max for fast startup)
+      const storagePromise = AsyncStorage.getItem('user');
+      const timeoutPromise = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), 1000)
+      );
+
+      const storedUser = await Promise.race([storagePromise, timeoutPromise]);
+
+      logger.log('Stored user found:', !!storedUser);
       if (storedUser) {
-        setUser(JSON.parse(storedUser));
+        try {
+          const parsed = JSON.parse(storedUser);
+          logger.log('User loaded:', parsed?.email);
+          setUser(parsed);
+        } catch (parseError) {
+          logger.error('Error parsing stored user');
+          // Clear corrupted data
+          AsyncStorage.removeItem('user').catch(() => {});
+        }
       }
     } catch (error) {
-      console.error('Error checking stored user:', error);
+      logger.error('Error checking stored user');
+      // Clear corrupted storage
+      AsyncStorage.removeItem('user').catch(() => {});
     } finally {
+      logger.log('Setting isLoading to false');
       setIsLoading(false);
     }
   }
 
-  async function handleGoogleSuccess(authentication: any) {
+  async function signInWithGoogle() {
     try {
       setIsLoading(true);
-      console.log('Google auth response:', JSON.stringify(authentication, null, 2));
+      logger.log('Starting Google sign in...');
 
-      if (!authentication?.accessToken) {
-        console.error('No access token received from Google');
-        throw new Error('No access token');
+      // Check if native Google Sign-In is available
+      if (!GoogleSignin) {
+        Alert.alert(
+          'Development Mode',
+          'Google Sign-In requires a production build. Please use "Try Demo" button instead.',
+          [{ text: 'OK' }]
+        );
+        setIsLoading(false);
+        return;
       }
 
-      // First, try to get user info from Google directly
-      let googleUser = null;
-      try {
-        const googleResponse = await fetch('https://www.googleapis.com/userinfo/v2/me', {
-          headers: { Authorization: `Bearer ${authentication.accessToken}` },
-        });
-        if (googleResponse.ok) {
-          googleUser = await googleResponse.json();
-          console.log('Google user info:', JSON.stringify(googleUser, null, 2));
-        }
-      } catch (googleError) {
-        console.error('Failed to fetch Google user info:', googleError);
+      // Check if Google Play Services are available
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      // Sign in with Google
+      const signInResult = await GoogleSignin.signIn();
+      logger.log('Google sign in result received');
+
+      const googleUser = signInResult.data?.user;
+      if (!googleUser?.email) {
+        throw new Error('Failed to get user email from Google');
       }
 
       // Try to sync with backend API
       let apiUser = null;
       try {
-        const result = await authApi.googleToken(
-          authentication.idToken || '',
-          authentication.accessToken
-        );
-        console.log('API response:', JSON.stringify(result, null, 2));
-
-        if (result.user) {
-          apiUser = result.user;
-          await AsyncStorage.setItem('token', result.token || '');
+        const idToken = signInResult.data?.idToken;
+        if (idToken) {
+          const result = await authApi.googleToken(idToken, '');
+          logger.log('API response received');
+          if (result.user) {
+            apiUser = result.user;
+            await AsyncStorage.setItem('token', result.token || '');
+          }
         }
       } catch (apiError: any) {
-        console.log('Backend API unavailable, using local auth:', apiError.message);
+        logger.log('Backend API unavailable, using local auth');
       }
 
       // Determine final user - always check persistent storage first
       let finalUser: User;
-
-      // Get email from either source
-      const userEmail = apiUser?.email || googleUser?.email;
-
-      if (!userEmail) {
-        throw new Error('Failed to get user email');
-      }
+      const userEmail = apiUser?.email || googleUser.email;
 
       // ALWAYS check persistent profile storage first (survives logout/login)
       const savedProfileData = await AsyncStorage.getItem(`userProfile_${userEmail}`);
@@ -180,17 +219,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (savedProfileData) {
         // Found saved profile - this user has logged in before
         const savedProfile = JSON.parse(savedProfileData);
-        console.log('Restoring saved profile for:', userEmail);
-        console.log('Saved profile data:', JSON.stringify(savedProfile, null, 2));
+        logger.log('Restoring saved profile');
 
         // Merge: saved profile is base, update with fresh auth data (but preserve onboarding fields)
         finalUser = {
           ...savedProfile,
-          // Update with fresh data from auth source
-          id: apiUser?.id || googleUser?.id || savedProfile.id,
-          name: apiUser?.name || googleUser?.name || savedProfile.name,
-          image: apiUser?.image || googleUser?.picture || savedProfile.image,
-          // ALWAYS preserve these from saved profile
+          id: apiUser?.id || googleUser.id || savedProfile.id,
+          name: apiUser?.name || googleUser.name || savedProfile.name,
+          image: apiUser?.image || googleUser.photo || savedProfile.image,
           role: savedProfile.role,
           onboardingComplete: savedProfile.onboardingComplete,
           phone: savedProfile.phone,
@@ -220,41 +256,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           minOrder: savedProfile.minOrder,
         };
       } else if (apiUser) {
-        // No saved profile, use API user
         finalUser = apiUser;
-      } else if (googleUser) {
-        // No saved profile, no API user - create new from Google
+      } else {
+        // Create new user from Google
         finalUser = {
           id: googleUser.id,
           email: googleUser.email,
           name: googleUser.name || '',
           role: 'OWNER',
-          image: googleUser.picture,
+          image: googleUser.photo || undefined,
           onboardingComplete: false,
         };
-      } else {
-        throw new Error('Failed to get user information');
       }
 
-      console.log('Final user:', JSON.stringify(finalUser, null, 2));
+      logger.log('User authenticated successfully');
       setUser(finalUser);
       await AsyncStorage.setItem('user', JSON.stringify(finalUser));
-      // Also save to persistent profile storage (survives logout)
       await AsyncStorage.setItem(`userProfile_${finalUser.email}`, JSON.stringify(finalUser));
     } catch (error: any) {
-      console.error('Google sign in error:', error.message || error);
-      throw error;
+      logger.error('Google sign in error:', error.message || error);
+
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        logger.log('User cancelled sign in');
+        return;
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        logger.log('Sign in already in progress');
+        return;
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Error', 'Google Play Services not available');
+        return;
+      }
+
+      Alert.alert('Sign In Error', error.message || 'Failed to sign in with Google');
     } finally {
       setIsLoading(false);
-    }
-  }
-
-  async function signInWithGoogle() {
-    try {
-      await promptAsync();
-    } catch (error) {
-      console.error('Google sign in error:', error);
-      throw error;
     }
   }
 
@@ -268,7 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ],
       });
 
-      console.log('Apple auth credential:', JSON.stringify(credential, null, 2));
+      logger.log('Apple auth credential received');
 
       // Get user info from credential
       const appleEmail = credential.email || `apple_${credential.user}@privaterelay.appleid.com`;
@@ -284,7 +319,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (savedProfileData) {
         // Found saved profile - restore it
         const savedProfile = JSON.parse(savedProfileData);
-        console.log('Restoring saved profile for:', appleEmail);
+        logger.log('Restoring saved Apple profile');
         finalUser = {
           ...savedProfile,
           id: credential.user,
@@ -315,16 +350,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      console.log('Final user from Apple:', JSON.stringify(finalUser, null, 2));
+      logger.log('Apple user authenticated successfully');
       setUser(finalUser);
       await AsyncStorage.setItem('user', JSON.stringify(finalUser));
       await AsyncStorage.setItem(`userProfile_${finalUser.email}`, JSON.stringify(finalUser));
 
     } catch (error: any) {
       if (error.code === 'ERR_CANCELED') {
-        console.log('Apple Sign In was cancelled');
+        logger.log('Apple Sign In was cancelled');
       } else {
-        console.error('Apple sign in error:', error);
+        logger.error('Apple sign in error');
         throw error;
       }
     } finally {
@@ -339,11 +374,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (user?.email) {
         await AsyncStorage.setItem(`userProfile_${user.email}`, JSON.stringify(user));
       }
+      // Sign out from Google if available
+      if (GoogleSignin) {
+        try {
+          await GoogleSignin.signOut();
+        } catch (e) {
+          // Ignore Google sign out errors
+        }
+      }
       await AsyncStorage.removeItem('user');
       await AsyncStorage.removeItem('token');
       setUser(null);
     } catch (error) {
-      console.error('Sign out error:', error);
+      logger.error('Sign out error');
     } finally {
       setIsLoading(false);
     }
@@ -385,6 +428,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Demo account for App Store review
+  // This creates a demo user with sample data for Apple reviewers
+  async function signInWithDemoAccount() {
+    try {
+      setIsLoading(true);
+
+      const demoUser: User = {
+        id: 'demo_reviewer_account',
+        email: ENV.DEMO_EMAIL,
+        name: 'Demo User',
+        role: 'OWNER',
+        onboardingComplete: true,
+        image: 'https://ui-avatars.com/api/?name=Demo+User&background=FF6B6B&color=fff',
+        phone: '+91 98765 43210',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        bio: 'Demo account for App Store review. This is a sample pet owner profile.',
+        pets: [
+          {
+            id: 'demo_pet_1',
+            name: 'Buddy',
+            species: 'Dog',
+            breed: 'Golden Retriever',
+            age: '3 years',
+            gender: 'Male',
+            vaccinated: true,
+            photos: ['https://images.unsplash.com/photo-1552053831-71594a27632d?w=400'],
+          },
+          {
+            id: 'demo_pet_2',
+            name: 'Whiskers',
+            species: 'Cat',
+            breed: 'Persian',
+            age: '2 years',
+            gender: 'Female',
+            vaccinated: true,
+            photos: ['https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=400'],
+          },
+        ],
+      };
+
+      setUser(demoUser);
+      await AsyncStorage.setItem('user', JSON.stringify(demoUser));
+      await AsyncStorage.setItem(`userProfile_${demoUser.email}`, JSON.stringify(demoUser));
+      logger.log('Demo account signed in');
+    } catch (error) {
+      logger.error('Demo sign in error');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -397,6 +493,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUserRole,
         completeOnboarding,
         updateUserProfile,
+        signInWithDemoAccount,
       }}
     >
       {children}

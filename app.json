@@ -1,22 +1,30 @@
 {
   "expo": {
-    "name": "pawzr2",
+    "name": "Pawzr",
     "slug": "pawzr",
     "owner": "riaaxxmalhotra",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFBF5"
     },
+    "primaryColor": "#FFFBF5",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pawzr.app",
+      "buildNumber": "28",
       "usesAppleSignIn": true,
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#FFFBF5",
+        "tabletImage": "./assets/splash-icon.png"
+      },
       "infoPlist": {
         "CFBundleURLTypes": [
           {
@@ -25,7 +33,8 @@
             ]
           }
         ],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Pawzr uses your location to show nearby pet lovers and calculate distances."
       }
     },
     "android": {
@@ -34,7 +43,12 @@
         "backgroundColor": "#FFFBF5"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.pawzr.app"
+      "package": "com.pawzr.app",
+      "versionCode": 65,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -52,8 +66,25 @@
       "url": "https://u.expo.dev/380a56f3-19c6-4d20-acca-42b5a7e3a349"
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFBF5"
+        }
+      ],
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "expo-apple-authentication",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Pawzr uses your location to show nearby pet lovers and calculate distances."
+        }
+      ],
+      "@react-native-google-signin/google-signin"
     ]
   }
 }

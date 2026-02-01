@@ -15,7 +15,7 @@ import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 
 export default function LoginScreen() {
-  const { signInWithGoogle, signInWithApple, isAppleAuthAvailable, isLoading } = useAuth();
+  const { signInWithGoogle, signInWithApple, isAppleAuthAvailable, isLoading, signInWithDemoAccount } = useAuth();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -59,6 +59,16 @@ export default function LoginScreen() {
                 <Text style={styles.googleButtonText}>Continue with Google</Text>
               </>
             )}
+          </TouchableOpacity>
+
+          {/* Quick Demo - For investors & reviewers */}
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={signInWithDemoAccount}
+            disabled={isLoading}
+          >
+            <Ionicons name="rocket" size={20} color={colors.white} />
+            <Text style={styles.demoButtonText}>Try Demo</Text>
           </TouchableOpacity>
         </View>
 
@@ -131,6 +141,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.gray[700],
+  },
+  demoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 10,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  demoButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.white,
   },
   terms: {
     marginTop: 32,

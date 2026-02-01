@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { petsApi } from '../lib/api';
+import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
 
@@ -60,7 +61,7 @@ export default function PetsScreen() {
       const data = await petsApi.getMyPets();
       setPets(data.pets || data || []);
     } catch (error: any) {
-      console.error('Failed to load pets:', error);
+      logger.error('Failed to load pets:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
