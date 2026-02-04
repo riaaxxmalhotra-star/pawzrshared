@@ -160,7 +160,10 @@ export default function ProfileScreen() {
 
         {/* Menu Items */}
         <View style={styles.menuSection}>
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('EditProfile')}
+          >
             <View style={styles.menuItemLeft}>
               <View style={[styles.menuIcon, { backgroundColor: `${colors.primary}15` }]}>
                 <Ionicons name="person-outline" size={20} color={colors.primary} />

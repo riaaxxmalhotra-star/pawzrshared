@@ -13,7 +13,7 @@ platform :ios do
       api_key: api_key,
       app_identifier: "com.pawzr.app",
       app_version: "1.2.0",
-      build_number: "28",
+      build_number: "29",
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: false,
