@@ -3,7 +3,7 @@
     "name": "Pawzr",
     "slug": "pawzr",
     "owner": "riaaxxmalhotra",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pawzr.app",
-      "buildNumber": "30",
+      "buildNumber": "31",
       "usesAppleSignIn": true,
       "splash": {
         "image": "./assets/splash-icon.png",
@@ -45,7 +45,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.pawzr.app",
-      "versionCode": 66,
+      "versionCode": 67,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
@@ -85,7 +85,15 @@
           "locationAlwaysAndWhenInUsePermission": "Pawzr uses your location to show nearby pet lovers and calculate distances."
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "@sentry/react-native",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#F97316"
+        }
+      ]
     ]
   }
 }

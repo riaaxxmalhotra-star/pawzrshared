@@ -15,20 +15,20 @@ import {
   getDocs,
   where,
 } from 'firebase/firestore';
+import ENV from '../config/env';
 
-// Firebase configuration - IMPORTANT: Replace with your actual config from Firebase Console
-// Go to: Firebase Console > Project Settings > General > Your apps > Firebase SDK snippet
+// Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",  // TODO: Replace with real API key
-  authDomain: "pawzr-app.firebaseapp.com",
-  projectId: "pawzr-app",
-  storageBucket: "pawzr-app.appspot.com",
-  messagingSenderId: "1094158533320",
-  appId: "1:1094158533320:web:xxxxxxxxxxxxxx"  // TODO: Replace with real app ID
+  apiKey: ENV.FIREBASE_API_KEY,
+  authDomain: ENV.FIREBASE_AUTH_DOMAIN || 'pawzr-1b4a7.firebaseapp.com',
+  projectId: ENV.FIREBASE_PROJECT_ID || 'pawzr-1b4a7',
+  storageBucket: ENV.FIREBASE_STORAGE_BUCKET || 'pawzr-1b4a7.firebasestorage.app',
+  messagingSenderId: ENV.FIREBASE_MESSAGING_SENDER_ID || '13399347964',
+  appId: ENV.FIREBASE_APP_ID,
 };
 
-// Check if Firebase is properly configured
-const isFirebaseConfigured = !firebaseConfig.apiKey.includes('xxxx') && !firebaseConfig.appId.includes('xxxx');
+// Check if Firebase is properly configured (API key and App ID are required)
+const isFirebaseConfigured = !!firebaseConfig.apiKey && !!firebaseConfig.appId;
 
 // Initialize Firebase with error handling
 let app: any = null;

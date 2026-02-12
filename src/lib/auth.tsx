@@ -69,6 +69,15 @@ interface User {
   products?: any[];
   orders?: any[];
   inventory?: any[];
+  // Cafe/Events fields
+  ownerName?: string;
+  petAmenities?: string[];
+  workingDays?: string[];
+  openTime?: string;
+  closeTime?: string;
+  seatingCapacity?: number;
+  priceRange?: string;
+  cafePhotos?: string[];
 }
 
 interface AuthContextType {

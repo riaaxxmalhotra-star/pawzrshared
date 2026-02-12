@@ -6,6 +6,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from './src/lib/auth';
 import AppNavigator from './src/navigation/AppNavigator';
+import { initSentry, captureError, Sentry } from './src/lib/sentry';
+import { registerForPushNotifications, addNotificationResponseListener } from './src/lib/notifications';
+
+// Initialize Sentry for error monitoring
+initSentry();
 
 // CRITICAL: Hide splash screen immediately on app start
 // This prevents blank screen issues on iOS
@@ -33,6 +38,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     console.error('App crashed:', error.message);
+    // Report to Sentry
+    captureError(error, { componentStack: errorInfo.componentStack });
   }
 
   handleRetry = () => {
@@ -96,19 +103,32 @@ const errorStyles = StyleSheet.create({
   },
 });
 
-export default function App() {
+function App() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     // Hide splash screen again after mount (belt and suspenders)
     SplashScreen.hideAsync().catch(() => {});
 
+    // Register for push notifications
+    registerForPushNotifications().catch(() => {});
+
+    // Handle notification taps
+    const subscription = addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data;
+      // Navigation to specific screens based on notification type can be handled here
+      console.log('Notification tapped:', data);
+    });
+
     // Small delay then show app - no blocking operations
     const timer = setTimeout(() => {
       setIsReady(true);
     }, 100);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
   }, []);
 
   // Always render something - never return null or blank
@@ -145,3 +165,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFBF5',
   },
 });
+
+// Wrap app with Sentry for better error tracking
+export default Sentry.wrap(App);

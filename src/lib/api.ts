@@ -388,17 +388,227 @@ export const profileApi = {
 
 // Events API
 export const eventsApi = {
-  getEvents: async () => {
-    return withRetry(() => apiRequest('/events'));
+  // Get all events (for consumers)
+  getEvents: async (filters?: { city?: string; eventType?: string; date?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.city) params.append('city', filters.city);
+    if (filters?.eventType) params.append('eventType', filters.eventType);
+    if (filters?.date) params.append('date', filters.date);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return withRetry(() => apiRequest(`/events${query}`));
   },
 
+  // Get single event details
   getEvent: async (eventId: string) => {
     return apiRequest(`/events/${eventId}`);
   },
 
-  rsvpEvent: async (eventId: string) => {
+  // RSVP/Book an event (for consumers)
+  rsvpEvent: async (eventId: string, bookingData?: {
+    guestCount?: number;
+    petName?: string;
+    specialRequests?: string;
+  }) => {
     return apiRequest(`/events/${eventId}/rsvp`, {
       method: 'POST',
+      body: JSON.stringify(bookingData || {}),
+    });
+  },
+
+  // Cancel event booking
+  cancelRsvp: async (eventId: string) => {
+    return apiRequest(`/events/${eventId}/rsvp`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Get my event bookings (for consumers)
+  getMyEventBookings: async () => {
+    return withRetry(() => apiRequest('/events/bookings/my'));
+  },
+
+  // --- Cafe Owner endpoints ---
+
+  // Get my events (for cafe owners)
+  getMyEvents: async () => {
+    return withRetry(() => apiRequest('/cafe/events'));
+  },
+
+  // Create event (for cafe owners)
+  createEvent: async (eventData: {
+    title: string;
+    description: string;
+    eventType: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    coverImage?: string;
+    price: number;
+    capacity: number;
+    petTypes: string[];
+    amenities: string[];
+    requirements?: string[];
+    status?: 'upcoming' | 'draft';
+  }) => {
+    return apiRequest('/cafe/events', {
+      method: 'POST',
+      body: JSON.stringify(eventData),
+    });
+  },
+
+  // Update event (for cafe owners)
+  updateEvent: async (eventId: string, eventData: any) => {
+    return apiRequest(`/cafe/events/${eventId}`, {
+      method: 'PUT',
+      body: JSON.stringify(eventData),
+    });
+  },
+
+  // Delete event (for cafe owners)
+  deleteEvent: async (eventId: string) => {
+    return apiRequest(`/cafe/events/${eventId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Get event bookings (for cafe owners)
+  getEventBookings: async (eventId: string) => {
+    return apiRequest(`/cafe/events/${eventId}/bookings`);
+  },
+};
+
+// Cafes API
+export const cafesApi = {
+  // Get all cafes (for consumers)
+  getCafes: async (filters?: { city?: string; petType?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.city) params.append('city', filters.city);
+    if (filters?.petType) params.append('petType', filters.petType);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return withRetry(() => apiRequest(`/cafes${query}`));
+  },
+
+  // Get single cafe details
+  getCafe: async (cafeId: string) => {
+    return apiRequest(`/cafes/${cafeId}`);
+  },
+
+  // Get cafe events
+  getCafeEvents: async (cafeId: string) => {
+    return apiRequest(`/cafes/${cafeId}/events`);
+  },
+
+  // Get cafe reviews
+  getCafeReviews: async (cafeId: string) => {
+    return apiRequest(`/cafes/${cafeId}/reviews`);
+  },
+
+  // Book a table at cafe
+  bookTable: async (cafeId: string, bookingData: {
+    date: string;
+    time: string;
+    guestCount: number;
+    petName?: string;
+    specialRequests?: string;
+  }) => {
+    return apiRequest(`/cafes/${cafeId}/book`, {
+      method: 'POST',
+      body: JSON.stringify(bookingData),
+    });
+  },
+
+  // Cancel table booking
+  cancelBooking: async (bookingId: string) => {
+    return apiRequest(`/cafe/bookings/${bookingId}/cancel`, {
+      method: 'POST',
+    });
+  },
+
+  // Submit review for cafe
+  submitReview: async (cafeId: string, reviewData: {
+    rating: number;
+    comment: string;
+    petName?: string;
+  }) => {
+    return apiRequest(`/cafes/${cafeId}/reviews`, {
+      method: 'POST',
+      body: JSON.stringify(reviewData),
+    });
+  },
+
+  // --- Cafe Owner endpoints ---
+
+  // Get my cafe profile (for cafe owners)
+  getMyCafe: async () => {
+    return apiRequest('/cafe/profile');
+  },
+
+  // Update cafe profile (for cafe owners)
+  updateCafe: async (cafeData: {
+    name?: string;
+    description?: string;
+    photos?: string[];
+    petAmenities?: string[];
+    generalAmenities?: string[];
+    openTime?: string;
+    closeTime?: string;
+    workingDays?: string[];
+    priceRange?: string;
+    seatingCapacity?: number;
+  }) => {
+    return apiRequest('/cafe/profile', {
+      method: 'PUT',
+      body: JSON.stringify(cafeData),
+    });
+  },
+
+  // Get my bookings (for cafe owners)
+  getMyBookings: async (filters?: { status?: string; date?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.date) params.append('date', filters.date);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return withRetry(() => apiRequest(`/cafe/bookings${query}`));
+  },
+
+  // Update booking status (for cafe owners)
+  updateBookingStatus: async (bookingId: string, status: 'confirmed' | 'completed' | 'cancelled' | 'no_show') => {
+    return apiRequest(`/cafe/bookings/${bookingId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  // Get analytics (for cafe owners)
+  getAnalytics: async (timeRange?: 'today' | 'week' | 'month' | 'year') => {
+    const query = timeRange ? `?range=${timeRange}` : '';
+    return apiRequest(`/cafe/analytics${query}`);
+  },
+
+  // Get customers/CRM data (for cafe owners)
+  getCustomers: async (segment?: 'all' | 'vip' | 'regular' | 'new' | 'inactive') => {
+    const query = segment && segment !== 'all' ? `?segment=${segment}` : '';
+    return withRetry(() => apiRequest(`/cafe/customers${query}`));
+  },
+
+  // Get customer details (for cafe owners)
+  getCustomer: async (customerId: string) => {
+    return apiRequest(`/cafe/customers/${customerId}`);
+  },
+
+  // Add customer note (for cafe owners)
+  addCustomerNote: async (customerId: string, note: string) => {
+    return apiRequest(`/cafe/customers/${customerId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  },
+
+  // Send promotional message to customer
+  sendPromotion: async (customerId: string, message: string) => {
+    return apiRequest(`/cafe/customers/${customerId}/promotion`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
     });
   },
 };

@@ -42,6 +42,17 @@ import VendorCRMScreen from '../screens/VendorCRMScreen';
 import PawzrWalletScreen from '../screens/PawzrWalletScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
+// Cafe & Events screens
+import CafeDashboardScreen from '../screens/cafe/CafeDashboardScreen';
+import CafeEventsScreen from '../screens/cafe/CafeEventsScreen';
+import CreateEventScreen from '../screens/cafe/CreateEventScreen';
+import CafeBookingsScreen from '../screens/cafe/CafeBookingsScreen';
+import CafeCRMScreen from '../screens/cafe/CafeCRMScreen';
+import CafeAnalyticsScreen from '../screens/cafe/CafeAnalyticsScreen';
+import EventsListScreen from '../screens/EventsListScreen';
+import EventDetailScreen from '../screens/EventDetailScreen';
+import CafeDetailScreen from '../screens/CafeDetailScreen';
+
 export type RootStackParamList = {
   Auth: undefined;
   RoleSelection: undefined;
@@ -75,11 +86,22 @@ export type HomeStackParamList = {
   Subscription: undefined;
   VendorCRM: undefined;
   PawzrWallet: undefined;
+  // Cafe screens
+  CafeEvents: undefined;
+  CreateEvent: undefined;
+  CafeBookings: undefined;
+  CafeAnalytics: undefined;
+  CafeCRM: undefined;
+  EventDetail: { eventId: string };
+  CafeDetail: { cafeId: string };
+  EventsList: undefined;
 };
 
 export type MainTabParamList = {
   Home: undefined;
   Swipe: undefined;  // Role-based: Owners see LoverMatch, Lovers see PetMatch
+  Events: undefined; // For OWNER/LOVER: browse events; For CAFE: manage events
+  Bookings: undefined; // For CAFE: manage bookings
   Chat: undefined;
   ProfileTab: undefined;
 };
@@ -133,6 +155,32 @@ function HomeNavigator() {
       <HomeStack.Screen name="Subscription" component={SubscriptionScreen} />
       <HomeStack.Screen name="VendorCRM" component={VendorCRMScreen} />
       <HomeStack.Screen name="PawzrWallet" component={PawzrWalletScreen} />
+      {/* Events screens for consumers */}
+      <HomeStack.Screen name="EventsList" component={EventsListScreen} />
+      <HomeStack.Screen name="EventDetail" component={EventDetailScreen} />
+      <HomeStack.Screen name="CafeDetail" component={CafeDetailScreen} />
+    </HomeStack.Navigator>
+  );
+}
+
+// Cafe Home Navigator - for CAFE role
+function CafeHomeNavigator() {
+  return (
+    <HomeStack.Navigator screenOptions={{ headerShown: false }}>
+      <HomeStack.Screen name="Dashboard" component={CafeDashboardScreen} />
+      <HomeStack.Screen name="CafeEvents" component={CafeEventsScreen} />
+      <HomeStack.Screen name="CreateEvent" component={CreateEventScreen} />
+      <HomeStack.Screen name="CafeBookings" component={CafeBookingsScreen} />
+      <HomeStack.Screen name="CafeCRM" component={CafeCRMScreen} />
+      <HomeStack.Screen name="CafeAnalytics" component={CafeAnalyticsScreen} />
+      <HomeStack.Screen name="Analytics" component={AnalyticsScreen} />
+      <HomeStack.Screen name="Earnings" component={EarningsScreen} />
+      <HomeStack.Screen name="VendorCRM" component={VendorCRMScreen} />
+      <HomeStack.Screen name="Subscription" component={SubscriptionScreen} />
+      <HomeStack.Screen name="PawzrWallet" component={PawzrWalletScreen} />
+      {FEATURES.NOTIFICATIONS && (
+        <HomeStack.Screen name="Notifications" component={NotificationsScreen} />
+      )}
     </HomeStack.Navigator>
   );
 }
@@ -171,6 +219,7 @@ const roleColors: Record<string, string> = {
   VET: '#10B981',
   GROOMER: '#8B5CF6',
   SUPPLIER: '#3B82F6',
+  CAFE: '#14B8A6',     // Teal
 };
 
 function MainNavigator() {
@@ -178,7 +227,9 @@ function MainNavigator() {
   const userRole = (user?.role || 'OWNER').toUpperCase();
   const isLover = userRole === 'LOVER';
   const isOwner = userRole === 'OWNER';
+  const isCafe = userRole === 'CAFE';
   const isProvider = ['VET', 'GROOMER', 'SUPPLIER'].includes(userRole);
+  const isConsumer = isOwner || isLover;
   const roleColor = roleColors[userRole] || colors.primary;
 
   // Get appropriate label for the second tab based on role
@@ -189,6 +240,7 @@ function MainNavigator() {
       case 'VET': return 'Schedule';
       case 'GROOMER': return 'Bookings';
       case 'SUPPLIER': return 'Orders';
+      case 'CAFE': return 'Events';
       default: return 'Activity';
     }
   };
@@ -222,6 +274,14 @@ function MainNavigator() {
             color={focused ? roleColor : colors.gray[400]}
           />
         );
+      case 'CAFE':
+        return (
+          <Ionicons
+            name={focused ? 'calendar' : 'calendar-outline'}
+            size={focused ? 26 : 24}
+            color={focused ? roleColor : colors.gray[400]}
+          />
+        );
       default:
         return (
           <Ionicons
@@ -232,6 +292,104 @@ function MainNavigator() {
         );
     }
   };
+
+  // For CAFE role - different tab structure
+  if (isCafe) {
+    return (
+      <MainTab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color }) => {
+            let iconName: keyof typeof Ionicons.glyphMap;
+
+            switch (route.name) {
+              case 'Home':
+                iconName = focused ? 'home' : 'home-outline';
+                break;
+              case 'Events':
+                iconName = focused ? 'calendar' : 'calendar-outline';
+                break;
+              case 'Bookings':
+                iconName = focused ? 'book' : 'book-outline';
+                break;
+              case 'Chat':
+                iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
+                break;
+              case 'ProfileTab':
+                iconName = focused ? 'person' : 'person-outline';
+                break;
+              default:
+                iconName = 'ellipse';
+            }
+
+            return (
+              <View style={focused ? [styles.activeTab, { backgroundColor: `${roleColor}15` }] : undefined}>
+                <Ionicons name={iconName} size={focused ? 26 : 24} color={color} />
+              </View>
+            );
+          },
+          tabBarActiveTintColor: roleColor,
+          tabBarInactiveTintColor: colors.gray[400],
+          headerShown: false,
+          tabBarShowLabel: true,
+          tabBarLabelStyle: {
+            fontSize: getTabBarFontSize(),
+            fontWeight: '600',
+            marginTop: -2,
+            marginBottom: isTablet() ? 8 : 6,
+          },
+          tabBarStyle: {
+            backgroundColor: colors.white,
+            borderTopColor: colors.gray[100],
+            borderTopWidth: 1,
+            height: getTabBarHeight(),
+            paddingTop: isTablet() ? 12 : 10,
+            paddingHorizontal: isTablet() ? 40 : 0,
+            shadowColor: colors.black,
+            shadowOffset: { width: 0, height: -4 },
+            shadowOpacity: 0.08,
+            shadowRadius: 12,
+            elevation: 10,
+          },
+        })}
+      >
+        <MainTab.Screen
+          name="Home"
+          component={CafeHomeNavigator}
+          options={{ tabBarLabel: 'Home' }}
+        />
+        <MainTab.Screen
+          name="Events"
+          component={CafeEventsScreen}
+          options={{ tabBarLabel: 'Events' }}
+        />
+        <MainTab.Screen
+          name="Bookings"
+          component={CafeBookingsScreen}
+          options={{ tabBarLabel: 'Bookings' }}
+        />
+        <MainTab.Screen
+          name="Chat"
+          component={MessagesScreen}
+          options={{
+            tabBarLabel: 'Chat',
+            tabBarBadge: 3,
+            tabBarBadgeStyle: {
+              backgroundColor: roleColor,
+              fontSize: 10,
+              minWidth: 18,
+              height: 18,
+              borderRadius: 9,
+            },
+          }}
+        />
+        <MainTab.Screen
+          name="ProfileTab"
+          component={ProfileNavigator}
+          options={{ tabBarLabel: 'Profile' }}
+        />
+      </MainTab.Navigator>
+    );
+  }
 
   return (
     <MainTab.Navigator
@@ -245,6 +403,16 @@ function MainNavigator() {
               break;
             case 'Swipe':
               return getSecondTabIcon(focused);
+            case 'Events':
+              return (
+                <View style={focused ? [styles.activeTab, { backgroundColor: `${roleColor}15` }] : undefined}>
+                  <Ionicons
+                    name={focused ? 'calendar' : 'calendar-outline'}
+                    size={focused ? 26 : 24}
+                    color={color}
+                  />
+                </View>
+              );
             case 'Chat':
               iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
               break;
@@ -302,6 +470,15 @@ function MainNavigator() {
           tabBarActiveTintColor: roleColor,
         }}
       />
+
+      {/* Events Tab - For OWNER/LOVER only */}
+      {isConsumer && (
+        <MainTab.Screen
+          name="Events"
+          component={EventsListScreen}
+          options={{ tabBarLabel: 'Events' }}
+        />
+      )}
 
       {/* Chat */}
       <MainTab.Screen

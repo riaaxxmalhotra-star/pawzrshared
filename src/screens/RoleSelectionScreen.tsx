@@ -24,6 +24,7 @@ const roleColors = {
   VET: '#10B981',      // Green
   GROOMER: '#8B5CF6',  // Purple
   SUPPLIER: '#3B82F6', // Blue
+  CAFE: '#14B8A6',     // Teal
 };
 
 const roles = [
@@ -71,6 +72,15 @@ const roles = [
     icon: 'storefront',
     emoji: '🏪',
     color: roleColors.SUPPLIER,
+  },
+  {
+    id: 'CAFE',
+    title: 'Pet Cafe & Events',
+    subtitle: 'Host pet-friendly experiences',
+    description: 'Create events, manage bookings, and welcome pets & their owners',
+    icon: 'cafe',
+    emoji: '☕',
+    color: roleColors.CAFE,
   },
 ];
 

@@ -5,6 +5,7 @@ import PetLoverOnboardingScreen from './PetLoverOnboardingScreen';
 import GroomerOnboardingScreen from './GroomerOnboardingScreen';
 import VetOnboardingScreen from './VetOnboardingScreen';
 import SupplierOnboardingScreen from './SupplierOnboardingScreen';
+import CafeOnboardingScreen from './CafeOnboardingScreen';
 import AadhaarVerificationScreen from '../AadhaarVerificationScreen';
 
 const Stack = createNativeStackNavigator();
@@ -24,6 +25,8 @@ export default function OnboardingNavigator({ route }: { route: any }) {
         return VetOnboardingScreen;
       case 'SUPPLIER':
         return SupplierOnboardingScreen;
+      case 'CAFE':
+        return CafeOnboardingScreen;
       default:
         return PetOwnerOnboardingScreen;
     }

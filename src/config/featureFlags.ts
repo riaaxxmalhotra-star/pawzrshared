@@ -52,10 +52,23 @@ export const FEATURES = {
 
   // Verification
   AADHAAR_VERIFICATION: true,
+
+  // ============================================
+  // CAFE & EVENTS FEATURES
+  // ============================================
+  CAFE_DASHBOARD: true,
+  CAFE_EVENTS: true,
+  CAFE_BOOKINGS: true,
+  CAFE_CRM: true,
+  CAFE_ANALYTICS: true,
+  CREATE_EVENT: true,
+  EVENTS_LIST: true,
+  EVENT_DETAIL: true,
+  CAFE_DETAIL: true,
 } as const;
 
 // All roles enabled
-export const ENABLED_ROLES = ['OWNER', 'LOVER', 'VET', 'GROOMER', 'SUPPLIER'] as const;
+export const ENABLED_ROLES = ['OWNER', 'LOVER', 'VET', 'GROOMER', 'SUPPLIER', 'CAFE'] as const;
 
 // Helper function to check if a feature is enabled
 export const isFeatureEnabled = (feature: keyof typeof FEATURES): boolean => {
