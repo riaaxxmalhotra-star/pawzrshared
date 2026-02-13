@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pawzr.app",
-      "buildNumber": "32",
+      "buildNumber": "34",
       "usesAppleSignIn": true,
       "splash": {
         "image": "./assets/splash-icon.png",
@@ -45,7 +45,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.pawzr.app",
-      "versionCode": 69,
+      "versionCode": 70,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
