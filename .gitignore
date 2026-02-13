@@ -48,3 +48,9 @@ GoogleService-Info.plist
 # generated native folders
 /ios
 /android
+# Credentials
+credentials.json
+*.keystore
+*.jks
+*.der
+*.pem
