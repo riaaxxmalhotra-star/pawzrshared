@@ -18,10 +18,12 @@ const ENV = {
   FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
   FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '',
 
-  // Aadhaar Verification API (Digio/Signzy)
-  AADHAAR_API_URL: process.env.EXPO_PUBLIC_AADHAAR_API_URL || '',
-  AADHAAR_API_KEY: process.env.EXPO_PUBLIC_AADHAAR_API_KEY || '',
-  AADHAAR_API_SECRET: process.env.EXPO_PUBLIC_AADHAAR_API_SECRET || '',
+  // Digio Aadhaar Verification API
+  // Note: These are only used if calling Digio directly (not recommended)
+  // Preferred: Backend handles Digio calls, these stay empty on client
+  DIGIO_CLIENT_ID: process.env.EXPO_PUBLIC_DIGIO_CLIENT_ID || '',
+  DIGIO_CLIENT_SECRET: process.env.EXPO_PUBLIC_DIGIO_CLIENT_SECRET || '',
+  DIGIO_ENV: process.env.EXPO_PUBLIC_DIGIO_ENV || 'sandbox', // 'sandbox' or 'production'
 
   // App Configuration
   IS_PRODUCTION: !__DEV__,
