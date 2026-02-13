@@ -31,7 +31,7 @@
     "production": {
       "autoIncrement": true,
       "android": {
-        "credentialsSource": "local",
+        "credentialsSource": "remote",
         "buildType": "app-bundle"
       },
       "ios": {
