@@ -45,7 +45,7 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.pawzr.app",
-      "versionCode": 68,
+      "versionCode": 69,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
@@ -85,20 +85,7 @@
           "locationAlwaysAndWhenInUsePermission": "Pawzr uses your location to show nearby pet lovers and calculate distances."
         }
       ],
-      "@react-native-google-signin/google-signin",
-      [
-        "@sentry/react-native",
-        {
-          "uploadSourceMaps": false
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon.png",
-          "color": "#F97316"
-        }
-      ]
+      "@react-native-google-signin/google-signin"
     ]
   }
 }
