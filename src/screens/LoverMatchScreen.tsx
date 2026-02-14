@@ -14,7 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { likesApi, swipeApi } from '../lib/api';
 import { useLocation } from '../hooks/useLocation';
@@ -514,33 +514,43 @@ export default function LoverMatchScreen() {
                   setStartingChat(false);
 
                   // Navigate to chat with the matched user info
-                  navigation.navigate('Chat', {
-                    conversationId: convId || `new-${matchedLover.id}`,
-                    matchedUser: {
-                      id: matchedLover.id,
-                      name: matchedLover.name,
-                      type: 'lover' as const,
-                      photo: matchedLover.photos[0],
-                      online: true,
-                      verified: matchedLover.verified,
-                    },
-                  });
+                  navigation.dispatch(
+                    CommonActions.navigate({
+                      name: 'Chat',
+                      params: {
+                        conversationId: convId || `new-${matchedLover.id}`,
+                        matchedUser: {
+                          id: matchedLover.id,
+                          name: matchedLover.name,
+                          type: 'lover' as const,
+                          photo: matchedLover.photos[0],
+                          online: true,
+                          verified: matchedLover.verified,
+                        },
+                      },
+                    })
+                  );
                 } catch (error) {
                   logger.log('Error creating conversation:', error);
                   setStartingChat(false);
                   setShowMatchModal(false);
                   // Still navigate to chat - the MessagesScreen will handle creating conversation on first message
-                  navigation.navigate('Chat', {
-                    conversationId: `new-${matchedLover.id}`,
-                    matchedUser: {
-                      id: matchedLover.id,
-                      name: matchedLover.name,
-                      type: 'lover' as const,
-                      photo: matchedLover.photos[0],
-                      online: true,
-                      verified: matchedLover.verified,
-                    },
-                  });
+                  navigation.dispatch(
+                    CommonActions.navigate({
+                      name: 'Chat',
+                      params: {
+                        conversationId: `new-${matchedLover.id}`,
+                        matchedUser: {
+                          id: matchedLover.id,
+                          name: matchedLover.name,
+                          type: 'lover' as const,
+                          photo: matchedLover.photos[0],
+                          online: true,
+                          verified: matchedLover.verified,
+                        },
+                      },
+                    })
+                  );
                 }
               }}
             >

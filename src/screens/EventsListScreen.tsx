@@ -261,7 +261,10 @@ export default function EventsListScreen() {
                     </View>
                     <Text style={styles.capacityText}>{event.capacity - event.bookedCount} spots left</Text>
                   </View>
-                  <TouchableOpacity style={styles.bookButton}>
+                  <TouchableOpacity
+                    style={styles.bookButton}
+                    onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
+                  >
                     <Text style={styles.bookButtonText}>Book</Text>
                   </TouchableOpacity>
                 </View>
