@@ -112,61 +112,82 @@ export default function MessagesScreen() {
 
   const roleConfig = getRoleConfig();
 
-  // Process navigation params IMMEDIATELY when screen focuses
+  // Helper to process chat params
+  const processMatchedUserParams = useCallback((params: any) => {
+    const { conversationId, matchedUser, petName, petId } = params;
+
+    if (!matchedUser) return false;
+
+    // Only process if we have matchedUser and haven't processed this exact params
+    const paramsKey = `${matchedUser.id}-${conversationId}`;
+
+    if (paramsProcessedRef.current === paramsKey) {
+      return false;
+    }
+
+    paramsProcessedRef.current = paramsKey;
+    logger.log('Opening chat with matched user:', matchedUser.name);
+
+    // IMMEDIATELY create and set the conversation - no waiting!
+    const newConversation: Conversation = {
+      id: conversationId || `new-${matchedUser.id}`,
+      name: matchedUser.name || 'New Match',
+      lastMessage: '',
+      time: 'Just now',
+      unread: 0,
+      avatar: getAvatarEmoji(matchedUser.type || 'lover'),
+      online: matchedUser.online ?? true,
+      recipientId: matchedUser.id,
+      petName,
+      petId,
+    };
+
+    // Set conversation IMMEDIATELY
+    setSelectedConversation(newConversation);
+    setMessages([]);
+    setLoadingMessages(false);
+    setInitialized(true);
+
+    // Clear navigation params
+    navigation.setParams({
+      conversationId: undefined,
+      matchedUser: undefined,
+      petName: undefined,
+      petId: undefined,
+    });
+
+    // Try to create real conversation in background
+    if (!conversationId || conversationId.startsWith('new-')) {
+      createConversationInBackground(matchedUser.id, newConversation);
+    }
+
+    return true;
+  }, []);
+
+  // Process navigation params when they change (handles navigation while already mounted)
+  useEffect(() => {
+    const params = route.params || {};
+    if (params.matchedUser) {
+      logger.log('MessagesScreen: Route params changed with matchedUser');
+      processMatchedUserParams(params);
+    }
+  }, [route.params, processMatchedUserParams]);
+
+  // Process navigation params when screen focuses
   useFocusEffect(
     useCallback(() => {
       const params = route.params || {};
-      const { conversationId, matchedUser, petName, petId } = params;
 
       logger.log('MessagesScreen focused');
-      logger.log('Params received');
 
-      // Only process if we have matchedUser and haven't processed this exact params
-      const paramsKey = matchedUser ? `${matchedUser.id}-${conversationId}` : null;
-
-      if (matchedUser && paramsKey && paramsProcessedRef.current !== paramsKey) {
-        paramsProcessedRef.current = paramsKey;
-
-        logger.log('Opening chat with matched user');
-
-        // IMMEDIATELY create and set the conversation - no waiting!
-        const newConversation: Conversation = {
-          id: conversationId || `new-${matchedUser.id}`,
-          name: matchedUser.name || 'New Match',
-          lastMessage: '',
-          time: 'Just now',
-          unread: 0,
-          avatar: getAvatarEmoji(matchedUser.type || 'lover'),
-          online: matchedUser.online ?? true,
-          recipientId: matchedUser.id,
-          petName,
-          petId,
-        };
-
-        // Set conversation IMMEDIATELY
-        setSelectedConversation(newConversation);
-        setMessages([]);
-        setLoadingMessages(false);
-        setInitialized(true);
-
-        // Clear navigation params
-        navigation.setParams({
-          conversationId: undefined,
-          matchedUser: undefined,
-          petName: undefined,
-          petId: undefined,
-        });
-
-        // Try to create real conversation in background
-        if (!conversationId || conversationId.startsWith('new-')) {
-          createConversationInBackground(matchedUser.id, newConversation);
-        }
-      } else if (!initialized && !matchedUser) {
+      if (params.matchedUser) {
+        processMatchedUserParams(params);
+      } else if (!initialized) {
         // No params, load conversations list
         setInitialized(true);
         loadConversations();
       }
-    }, [route.params])
+    }, [route.params, processMatchedUserParams, initialized])
   );
 
   // Create conversation in background (don't block UI)

@@ -10,6 +10,8 @@ import {
   Modal,
   TextInput,
   Alert,
+  Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -103,6 +105,32 @@ export default function EventDetailScreen() {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  };
+
+  const openInMaps = () => {
+    const address = encodeURIComponent(event.location);
+    const url = Platform.select({
+      ios: `maps://app?daddr=${address}`,
+      android: `google.navigation:q=${address}`,
+    });
+
+    const webUrl = `https://www.google.com/maps/search/?api=1&query=${address}`;
+
+    if (url) {
+      Linking.canOpenURL(url)
+        .then((supported) => {
+          if (supported) {
+            return Linking.openURL(url);
+          } else {
+            return Linking.openURL(webUrl);
+          }
+        })
+        .catch(() => {
+          Linking.openURL(webUrl);
+        });
+    } else {
+      Linking.openURL(webUrl);
+    }
   };
 
   const handleBooking = async () => {
@@ -267,10 +295,16 @@ export default function EventDetailScreen() {
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
             </TouchableOpacity>
-            <View style={styles.locationRow}>
-              <Ionicons name="location" size={16} color={colors.gray[500]} />
-              <Text style={styles.locationText}>{event.location}</Text>
-            </View>
+            <TouchableOpacity style={styles.locationRow} onPress={openInMaps} activeOpacity={0.7}>
+              <View style={styles.locationInfo}>
+                <Ionicons name="location" size={16} color={colors.gray[500]} />
+                <Text style={styles.locationText}>{event.location}</Text>
+              </View>
+              <View style={styles.directionsButton}>
+                <Ionicons name="navigate" size={14} color={colors.white} />
+                <Text style={styles.directionsButtonText}>Directions</Text>
+              </View>
+            </TouchableOpacity>
           </View>
 
           {/* Description */}
@@ -549,8 +583,11 @@ const styles = StyleSheet.create({
   venueName: { fontSize: 16, fontWeight: '600', color: colors.gray[900] },
   venueRating: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   venueRatingText: { fontSize: 14, fontWeight: '600', color: '#F59E0B', marginLeft: 4 },
-  locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.gray[200] },
-  locationText: { fontSize: 14, color: colors.gray[600], marginLeft: 8 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.gray[200] },
+  locationInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  locationText: { fontSize: 14, color: colors.gray[600], marginLeft: 8, flex: 1 },
+  directionsButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: CAFE_COLOR, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 4 },
+  directionsButtonText: { fontSize: 12, fontWeight: '600', color: colors.white },
   section: { marginBottom: 24 },
   description: { fontSize: 15, color: colors.gray[700], lineHeight: 24 },
   tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
