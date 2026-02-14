@@ -236,7 +236,7 @@ export default function EventsListScreen() {
             <TouchableOpacity
               key={event.id}
               style={styles.eventCard}
-              onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
+              onPress={() => navigation.navigate('Home', { screen: 'EventDetail', params: { eventId: event.id } })}
             >
               <Image source={{ uri: event.coverImage }} style={styles.eventImage} />
               <View style={styles.eventBadge}>
@@ -263,7 +263,7 @@ export default function EventsListScreen() {
                   </View>
                   <TouchableOpacity
                     style={styles.bookButton}
-                    onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
+                    onPress={() => navigation.navigate('Home', { screen: 'EventDetail', params: { eventId: event.id } })}
                   >
                     <Text style={styles.bookButtonText}>Book</Text>
                   </TouchableOpacity>
@@ -286,7 +286,7 @@ export default function EventsListScreen() {
             <TouchableOpacity
               key={cafe.id}
               style={styles.cafeCard}
-              onPress={() => navigation.navigate('CafeDetail', { cafeId: cafe.id })}
+              onPress={() => navigation.navigate('Home', { screen: 'CafeDetail', params: { cafeId: cafe.id } })}
             >
               <Image source={{ uri: cafe.image }} style={styles.cafeImage} />
               <View style={styles.cafeContent}>

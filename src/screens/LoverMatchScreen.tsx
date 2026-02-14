@@ -513,44 +513,40 @@ export default function LoverMatchScreen() {
                   setShowMatchModal(false);
                   setStartingChat(false);
 
-                  // Navigate to chat with the matched user info
-                  navigation.dispatch(
-                    CommonActions.navigate({
-                      name: 'Chat',
-                      params: {
-                        conversationId: convId || `new-${matchedLover.id}`,
-                        matchedUser: {
-                          id: matchedLover.id,
-                          name: matchedLover.name,
-                          type: 'lover' as const,
-                          photo: matchedLover.photos[0],
-                          online: true,
-                          verified: matchedLover.verified,
-                        },
+                  // Navigate to chat tab first, then set params
+                  navigation.navigate('Chat');
+                  setTimeout(() => {
+                    navigation.setParams({
+                      conversationId: convId || `new-${matchedLover.id}`,
+                      matchedUser: {
+                        id: matchedLover.id,
+                        name: matchedLover.name,
+                        type: 'lover' as const,
+                        photo: matchedLover.photos[0],
+                        online: true,
+                        verified: matchedLover.verified,
                       },
-                    })
-                  );
+                    });
+                  }, 100);
                 } catch (error) {
                   logger.log('Error creating conversation:', error);
                   setStartingChat(false);
                   setShowMatchModal(false);
-                  // Still navigate to chat - the MessagesScreen will handle creating conversation on first message
-                  navigation.dispatch(
-                    CommonActions.navigate({
-                      name: 'Chat',
-                      params: {
-                        conversationId: `new-${matchedLover.id}`,
-                        matchedUser: {
-                          id: matchedLover.id,
-                          name: matchedLover.name,
-                          type: 'lover' as const,
-                          photo: matchedLover.photos[0],
-                          online: true,
-                          verified: matchedLover.verified,
-                        },
+                  // Still navigate to chat
+                  navigation.navigate('Chat');
+                  setTimeout(() => {
+                    navigation.setParams({
+                      conversationId: `new-${matchedLover.id}`,
+                      matchedUser: {
+                        id: matchedLover.id,
+                        name: matchedLover.name,
+                        type: 'lover' as const,
+                        photo: matchedLover.photos[0],
+                        online: true,
+                        verified: matchedLover.verified,
                       },
-                    })
-                  );
+                    });
+                  }, 100);
                 }
               }}
             >
