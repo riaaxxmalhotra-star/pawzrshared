@@ -384,6 +384,12 @@ export const profileApi = {
       body: JSON.stringify({ userId, role }),
     });
   },
+
+  deleteAccount: async () => {
+    return apiRequest('/users/me', {
+      method: 'DELETE',
+    });
+  },
 };
 
 // Events API

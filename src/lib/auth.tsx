@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform, Alert } from 'react-native';
-import { authApi } from './api';
+import { authApi, profileApi } from './api';
 import logger from './logger';
 import ENV from '../config/env';
 
@@ -91,6 +91,7 @@ interface AuthContextType {
   completeOnboarding: () => Promise<void>;
   updateUserProfile: (updates: Partial<User>) => Promise<void>;
   signInWithDemoAccount: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -437,6 +438,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function deleteAccount() {
+    try {
+      setIsLoading(true);
+
+      // Try to delete from backend
+      try {
+        await profileApi.deleteAccount();
+      } catch (apiError) {
+        logger.log('Backend delete failed or unavailable, continuing local cleanup');
+      }
+
+      // Clear all local data
+      const email = user?.email;
+      if (email) {
+        await AsyncStorage.removeItem(`userProfile_${email}`);
+      }
+      await AsyncStorage.removeItem('user');
+      await AsyncStorage.removeItem('token');
+
+      // Sign out from Google if available
+      if (GoogleSignin) {
+        try {
+          await GoogleSignin.signOut();
+        } catch (e) {
+          // Ignore
+        }
+      }
+
+      setUser(null);
+    } catch (error) {
+      logger.error('Delete account error');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   // Demo account for App Store review
   // This creates a demo user with sample data for Apple reviewers
   async function signInWithDemoAccount() {
@@ -503,6 +541,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         completeOnboarding,
         updateUserProfile,
         signInWithDemoAccount,
+        deleteAccount,
       }}
     >
       {children}

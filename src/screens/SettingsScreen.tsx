@@ -11,14 +11,50 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
+import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const { deleteAccount } = useAuth();
   const [pushEnabled, setPushEnabled] = useState(true);
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [locationEnabled, setLocationEnabled] = useState(true);
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action is permanent and cannot be undone. All your data, pets, bookings, and messages will be permanently deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Final Confirmation',
+              'This will permanently delete your Pawzr account and all associated data. Are you absolutely sure?',
+              [
+                { text: 'Keep Account', style: 'cancel' },
+                {
+                  text: 'Yes, Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await deleteAccount();
+                    } catch {
+                      Alert.alert('Error', 'Failed to delete account. Please try again or contact support@pawzr.com.');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -98,7 +134,10 @@ export default function SettingsScreen() {
             />
           </View>
 
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={() => WebBrowser.openBrowserAsync('https://pawzrpro.vercel.app/privacy')}
+          >
             <View style={styles.settingLeft}>
               <View style={[styles.settingIcon, { backgroundColor: '#F5970B15' }]}>
                 <Ionicons name="shield" size={20} color="#F59E0B" />
@@ -111,7 +150,10 @@ export default function SettingsScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.settingItem}>
+          <TouchableOpacity
+            style={styles.settingItem}
+            onPress={() => WebBrowser.openBrowserAsync('https://pawzrpro.vercel.app/terms')}
+          >
             <View style={styles.settingLeft}>
               <View style={[styles.settingIcon, { backgroundColor: '#EF444415' }]}>
                 <Ionicons name="document-text" size={20} color="#EF4444" />
@@ -136,7 +178,7 @@ export default function SettingsScreen() {
               </View>
               <View>
                 <Text style={styles.settingLabel}>App Version</Text>
-                <Text style={styles.settingDesc}>v1.2.0</Text>
+                <Text style={styles.settingDesc}>v1.3.0</Text>
               </View>
             </View>
           </TouchableOpacity>
@@ -152,6 +194,24 @@ export default function SettingsScreen() {
               </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Danger Zone */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: '#EF4444' }]}>Danger Zone</Text>
+
+          <TouchableOpacity style={styles.settingItem} onPress={handleDeleteAccount}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: '#EF444415' }]}>
+                <Ionicons name="trash" size={20} color="#EF4444" />
+              </View>
+              <View>
+                <Text style={[styles.settingLabel, { color: '#EF4444' }]}>Delete Account</Text>
+                <Text style={styles.settingDesc}>Permanently delete your account and data</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#EF4444" />
           </TouchableOpacity>
         </View>
 

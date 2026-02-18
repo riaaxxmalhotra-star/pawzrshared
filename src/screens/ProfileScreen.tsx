@@ -299,7 +299,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* Version */}
-        <Text style={styles.version}>pawzr v1.2.0</Text>
+        <Text style={styles.version}>pawzr v1.3.0</Text>
 
         <View style={{ height: 100 }} />
       </ScrollView>

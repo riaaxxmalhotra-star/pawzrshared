@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 
@@ -74,7 +75,20 @@ export default function LoginScreen() {
 
         {/* Terms */}
         <Text style={styles.terms}>
-          By continuing, you agree to our Terms of Service and Privacy Policy
+          By continuing, you agree to our{' '}
+          <Text
+            style={styles.termsLink}
+            onPress={() => WebBrowser.openBrowserAsync('https://pawzrpro.vercel.app/terms')}
+          >
+            Terms of Service
+          </Text>
+          {' '}and{' '}
+          <Text
+            style={styles.termsLink}
+            onPress={() => WebBrowser.openBrowserAsync('https://pawzrpro.vercel.app/privacy')}
+          >
+            Privacy Policy
+          </Text>
         </Text>
       </View>
     </SafeAreaView>
@@ -167,5 +181,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.gray[400],
     paddingHorizontal: 20,
+  },
+  termsLink: {
+    color: colors.primary,
+    textDecorationLine: 'underline',
   },
 });
