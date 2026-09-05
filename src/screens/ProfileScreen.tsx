@@ -189,25 +189,28 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={colors.gray[400]} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => navigation.navigate('Subscription')}
-          >
-            <View style={styles.menuItemLeft}>
-              <View style={[styles.menuIcon, { backgroundColor: '#F5970B15' }]}>
-                <Ionicons name="diamond-outline" size={20} color="#F59E0B" />
+          {/* Only show Subscription/Growth Plans for providers (VET, GROOMER, SUPPLIER) */}
+          {isProvider && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('Subscription')}
+            >
+              <View style={styles.menuItemLeft}>
+                <View style={[styles.menuIcon, { backgroundColor: '#F5970B15' }]}>
+                  <Ionicons name="diamond-outline" size={20} color="#F59E0B" />
+                </View>
+                <View>
+                  <Text style={styles.menuLabel}>Growth Plans</Text>
+                  <Text style={styles.menuSubLabel}>
+                    Upgrade to reduce commission
+                  </Text>
+                </View>
               </View>
-              <View>
-                <Text style={styles.menuLabel}>Subscription</Text>
-                <Text style={styles.menuSubLabel}>
-                  {isProvider ? 'Upgrade to reduce commission' : 'Premium features & benefits'}
-                </Text>
+              <View style={styles.proBadge}>
+                <Text style={styles.proBadgeText}>Pro</Text>
               </View>
-            </View>
-            <View style={styles.proBadge}>
-              <Text style={styles.proBadgeText}>Pro</Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          )}
 
           {!isLover && !isProvider && (
             <TouchableOpacity

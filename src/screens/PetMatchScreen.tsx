@@ -345,8 +345,8 @@ export default function PetMatchScreen() {
   const currentPet = pets[currentIndex];
   const nextPet = pets[currentIndex + 1];
 
-  // Empty state
-  if (currentIndex >= pets.length) {
+  // Empty state - check both index AND if currentPet exists
+  if (currentIndex >= pets.length || !currentPet) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.emptyContainer}>
@@ -538,56 +538,36 @@ export default function PetMatchScreen() {
             <TouchableOpacity
               style={[styles.messageBtn, startingChat && styles.messageBtnDisabled]}
               disabled={startingChat}
-              onPress={async () => {
+              onPress={() => {
                 if (!matchedPet?.owner?.id || startingChat) {
                   return;
                 }
 
                 setStartingChat(true);
 
-                try {
-                  // Always create/get conversation before navigating
-                  let convId = matchConversationId;
-                  if (!convId) {
-                    logger.log('Creating conversation with owner');
-                    const response = await likesApi.createConversation(matchedPet.owner.id);
-                    logger.log('Conversation created');
-                    convId = response.conversationId || response.conversation?.id || response.id;
-                  }
+                // Prepare navigation params
+                const chatParams = {
+                  conversationId: matchConversationId || `new-${matchedPet.owner.id}`,
+                  matchedUser: {
+                    id: matchedPet.owner.id,
+                    name: matchedPet.owner.name || matchedPet.name,
+                    type: 'owner' as const,
+                    photo: matchedPet.photos?.[0],
+                    online: true,
+                    verified: matchedPet.owner.verified || false,
+                  },
+                  petName: matchedPet.name,
+                  petId: matchedPet.id,
+                };
 
-                  // Close modal first
-                  setShowMatchModal(false);
-                  setStartingChat(false);
+                // Close modal and navigate
+                setShowMatchModal(false);
 
-                  // Navigate to chat with the matched user info
-                  navigation.navigate('Chat', {
-                    conversationId: convId || `new-${matchedPet.owner.id}`,
-                    matchedUser: {
-                      id: matchedPet.owner.id,
-                      name: matchedPet.owner.name || matchedPet.name,
-                      type: 'owner' as const,
-                      photo: matchedPet.photos?.[0],
-                      online: true,
-                      verified: matchedPet.owner.verified || false,
-                    },
-                  });
-                } catch (error) {
-                  logger.log('Error creating conversation');
+                // Navigate after a short delay to let modal close
+                setTimeout(() => {
                   setStartingChat(false);
-                  setShowMatchModal(false);
-                  // Still navigate to chat - the MessagesScreen will handle creating conversation on first message
-                  navigation.navigate('Chat', {
-                    conversationId: `new-${matchedPet.owner.id}`,
-                    matchedUser: {
-                      id: matchedPet.owner.id,
-                      name: matchedPet.owner.name || matchedPet.name,
-                      type: 'owner' as const,
-                      photo: matchedPet.photos?.[0],
-                      online: true,
-                      verified: matchedPet.owner.verified || false,
-                    },
-                  });
-                }
+                  navigation.navigate('Chat', chatParams);
+                }, 200);
               }}
             >
               {startingChat ? (

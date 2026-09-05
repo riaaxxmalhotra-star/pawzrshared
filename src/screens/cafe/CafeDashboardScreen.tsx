@@ -11,9 +11,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../lib/auth';
-import { colors } from '../../theme/colors';
+import { colors, roleColors } from '../../theme/colors';
 
-const CAFE_COLOR = '#14B8A6';
+// Use centralized role color
+const CAFE_COLOR = roleColors.CAFE;
 
 export default function CafeDashboardScreen() {
   const navigation = useNavigation<any>();

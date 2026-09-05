@@ -10,9 +10,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../../theme/colors';
+import { colors, roleColors } from '../../theme/colors';
 
-const CAFE_COLOR = '#14B8A6';
+// Use centralized role color
+const CAFE_COLOR = roleColors.CAFE;
 
 type BookingStatus = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 

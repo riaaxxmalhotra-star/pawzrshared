@@ -12,18 +12,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
-import { colors } from '../theme/colors';
+import { colors, roleColors, getRoleColor } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
-
-// Role-specific colors
-const roleColors = {
-  OWNER: '#F97316',
-  LOVER: '#F97316',    // Orange (same as Owner)
-  VET: '#10B981',
-  GROOMER: '#8B5CF6',
-  SUPPLIER: '#3B82F6',
-};
 
 export default function DashboardScreen() {
   const { user } = useAuth();
@@ -37,7 +28,7 @@ export default function DashboardScreen() {
     return 'Good evening';
   };
 
-  const roleColor = roleColors[userRole as keyof typeof roleColors] || colors.primary;
+  const roleColor = getRoleColor(userRole);
 
   // Vet Dashboard
   if (userRole === 'VET') {

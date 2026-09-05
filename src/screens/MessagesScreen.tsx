@@ -6,19 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { messagesApi, likesApi } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import logger from '../lib/logger';
+import ChatInterface from '../components/chat/ChatInterface';
 
 interface Conversation {
   id: string;
@@ -31,13 +29,6 @@ interface Conversation {
   recipientId?: string;
   petName?: string;
   petId?: string;
-}
-
-interface Message {
-  id: string;
-  text: string;
-  sent: boolean;
-  time: string;
 }
 
 interface MatchedUser {
@@ -55,15 +46,10 @@ export default function MessagesScreen() {
   const navigation = useNavigation<any>();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [messageText, setMessageText] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [initialized, setInitialized] = useState(false);
-  const scrollViewRef = useRef<ScrollView>(null);
   const paramsProcessedRef = useRef<string | null>(null);
 
   // Role-based configuration
@@ -112,23 +98,15 @@ export default function MessagesScreen() {
 
   const roleConfig = getRoleConfig();
 
-  // Helper to process chat params
+  // Process chat params - called when navigating with matchedUser
   const processMatchedUserParams = useCallback((params: any) => {
     const { conversationId, matchedUser, petName, petId } = params;
 
     if (!matchedUser) return false;
 
-    // Only process if we have matchedUser and haven't processed this exact params
-    const paramsKey = `${matchedUser.id}-${conversationId}`;
-
-    if (paramsProcessedRef.current === paramsKey) {
-      return false;
-    }
-
-    paramsProcessedRef.current = paramsKey;
     logger.log('Opening chat with matched user:', matchedUser.name);
 
-    // IMMEDIATELY create and set the conversation - no waiting!
+    // Create conversation object immediately
     const newConversation: Conversation = {
       id: conversationId || `new-${matchedUser.id}`,
       name: matchedUser.name || 'New Match',
@@ -142,53 +120,44 @@ export default function MessagesScreen() {
       petId,
     };
 
-    // Set conversation IMMEDIATELY
+    // Set conversation state - this will render ChatInterface
     setSelectedConversation(newConversation);
-    setMessages([]);
-    setLoadingMessages(false);
     setInitialized(true);
 
-    // Clear navigation params
-    navigation.setParams({
-      conversationId: undefined,
-      matchedUser: undefined,
-      petName: undefined,
-      petId: undefined,
-    });
+    // Clear params AFTER setting state to prevent re-processing
+    setTimeout(() => {
+      navigation.setParams({
+        conversationId: undefined,
+        matchedUser: undefined,
+        petName: undefined,
+        petId: undefined,
+      });
+    }, 0);
 
-    // Try to create real conversation in background
+    // Create real conversation in background if needed
     if (!conversationId || conversationId.startsWith('new-')) {
       createConversationInBackground(matchedUser.id, newConversation);
     }
 
     return true;
-  }, []);
+  }, [navigation]);
 
-  // Process navigation params when they change (handles navigation while already mounted)
+  // Watch for route params changes - this handles navigation with params
   useEffect(() => {
     const params = route.params || {};
     if (params.matchedUser) {
-      logger.log('MessagesScreen: Route params changed with matchedUser');
+      logger.log('Route params received with matchedUser:', params.matchedUser.name);
       processMatchedUserParams(params);
     }
-  }, [route.params, processMatchedUserParams]);
+  }, [route.params]);
 
-  // Process navigation params when screen focuses
-  useFocusEffect(
-    useCallback(() => {
-      const params = route.params || {};
-
-      logger.log('MessagesScreen focused');
-
-      if (params.matchedUser) {
-        processMatchedUserParams(params);
-      } else if (!initialized) {
-        // No params, load conversations list
-        setInitialized(true);
-        loadConversations();
-      }
-    }, [route.params, processMatchedUserParams, initialized])
-  );
+  // Load conversations on mount if no params
+  useEffect(() => {
+    if (!route.params?.matchedUser && !initialized && !selectedConversation) {
+      setInitialized(true);
+      loadConversations();
+    }
+  }, [initialized, selectedConversation]);
 
   // Create conversation in background (don't block UI)
   const createConversationInBackground = async (userId: string, currentConv: Conversation) => {
@@ -205,21 +174,6 @@ export default function MessagesScreen() {
       logger.log('Background conversation creation failed (using temp)');
     }
   };
-
-  // Auto-refresh messages when in chat
-  useEffect(() => {
-    if (selectedConversation && !selectedConversation.id.startsWith('new-')) {
-      loadMessages(selectedConversation.id);
-
-      const interval = setInterval(() => {
-        if (!sending) {
-          loadMessages(selectedConversation.id, false);
-        }
-      }, 3000);
-
-      return () => clearInterval(interval);
-    }
-  }, [selectedConversation?.id]);
 
   const loadConversations = async () => {
     setLoading(true);
@@ -245,34 +199,6 @@ export default function MessagesScreen() {
     }
   };
 
-  const loadMessages = async (conversationId: string, showLoading = true) => {
-    if (conversationId.startsWith('new-')) {
-      setMessages([]);
-      setLoadingMessages(false);
-      return;
-    }
-
-    if (showLoading && messages.length === 0) {
-      setLoadingMessages(true);
-    }
-
-    try {
-      const data = await messagesApi.getMessages(conversationId);
-      const msgs = (data.messages || data || []).map((m: any) => ({
-        id: m.id,
-        text: m.content || m.text,
-        sent: m.sent || m.isOwn || m.senderId === user?.id || false,
-        time: formatMessageTime(m.createdAt),
-      }));
-      setMessages(msgs);
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (error) {
-      logger.error('Failed to load messages');
-    } finally {
-      setLoadingMessages(false);
-    }
-  };
-
   const formatTime = (date: string) => {
     if (!date) return '';
     const d = new Date(date);
@@ -287,11 +213,6 @@ export default function MessagesScreen() {
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays === 1) return 'Yesterday';
     return d.toLocaleDateString();
-  };
-
-  const formatMessageTime = (date: string) => {
-    if (!date) return '';
-    return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const getAvatarEmoji = (type?: string) => {
@@ -310,196 +231,29 @@ export default function MessagesScreen() {
     loadConversations();
   };
 
-  const sendMessage = async () => {
-    if (!messageText.trim() || !selectedConversation || sending) return;
-
-    const tempMessage: Message = {
-      id: Date.now().toString(),
-      text: messageText,
-      sent: true,
-      time: 'Sending...',
-    };
-
-    setMessages(prev => [...prev, tempMessage]);
-    const messageToSend = messageText;
-    setMessageText('');
-    setSending(true);
-
-    try {
-      const recipientId = selectedConversation.recipientId || selectedConversation.id.replace('new-', '');
-
-      if (selectedConversation.id.startsWith('new-')) {
-        logger.log('Starting new conversation with recipient:', recipientId);
-
-        const response = await messagesApi.startConversation(recipientId, messageToSend);
-        const newConvId = response.conversationId || response.conversation?.id || response.id;
-
-        logger.log('New conversation created:', newConvId);
-
-        if (newConvId) {
-          setSelectedConversation(prev => prev ? { ...prev, id: newConvId } : null);
-          // Reload messages to get the server's version
-          setTimeout(() => loadMessages(newConvId), 500);
-        }
-      } else {
-        logger.log('Sending message to conversation:', selectedConversation.id, 'recipient:', recipientId);
-        await messagesApi.sendMessage(selectedConversation.id, messageToSend, recipientId);
-        // Reload messages to get the server's version with proper timestamps
-        setTimeout(() => loadMessages(selectedConversation.id, false), 500);
-      }
-
-      setMessages(prev => prev.map(m =>
-        m.id === tempMessage.id ? { ...m, time: 'Just now' } : m
-      ));
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-    } catch (error: any) {
-      logger.error('Failed to send message:', error?.message || error);
-      setMessages(prev => prev.filter(m => m.id !== tempMessage.id));
-      setMessageText(messageToSend);
-      Alert.alert('Error', 'Failed to send message. Please try again.');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleScheduleWalk = () => {
-    setMessageText(`🚶 Walk Request\n\nI'd like to schedule a walk!\n\nPlease let me know your availability.`);
-  };
-
-  const handleScheduleHosting = () => {
-    setMessageText(`🏠 Hosting Request\n\nI'd like to schedule pet hosting!\n\nPlease let me know your availability and rates.`);
-  };
-
   const filteredConversations = conversations.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // ============ CHAT VIEW ============
+  // ============ CHAT VIEW (Using ChatInterface component) ============
   if (selectedConversation) {
+    const handleBackFromChat = () => {
+      setSelectedConversation(null);
+      paramsProcessedRef.current = null;
+      loadConversations();
+    };
+
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <KeyboardAvoidingView
-          style={styles.chatContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          {/* Chat Header */}
-          <View style={styles.chatHeader}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => {
-                setSelectedConversation(null);
-                paramsProcessedRef.current = null;
-                loadConversations();
-              }}
-            >
-              <Ionicons name="arrow-back" size={24} color={colors.gray[700]} />
-            </TouchableOpacity>
-            <View style={styles.chatHeaderInfo}>
-              <View style={styles.chatAvatar}>
-                <Text style={styles.chatAvatarText}>{selectedConversation.avatar}</Text>
-                {selectedConversation.online && <View style={styles.onlineDot} />}
-              </View>
-              <View>
-                <Text style={styles.chatName}>{selectedConversation.name}</Text>
-                {selectedConversation.petName ? (
-                  <Text style={styles.chatPetName}>About {selectedConversation.petName}</Text>
-                ) : (
-                  <Text style={styles.chatStatus}>
-                    {selectedConversation.online ? 'Online' : 'Offline'}
-                  </Text>
-                )}
-              </View>
-            </View>
-            <TouchableOpacity style={styles.callButton}>
-              <Ionicons name="videocam" size={22} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Messages */}
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.messagesContainer}
-            contentContainerStyle={styles.messagesContent}
-          >
-            {loadingMessages ? (
-              <View style={styles.loadingMessages}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text style={styles.loadingText}>Loading messages...</Text>
-              </View>
-            ) : messages.length === 0 ? (
-              <View style={styles.emptyMessages}>
-                <Ionicons name="chatbubbles-outline" size={64} color={colors.gray[300]} />
-                <Text style={styles.emptyTitle}>Start the conversation!</Text>
-                <Text style={styles.emptySubtext}>
-                  Say hello to {selectedConversation.name}
-                </Text>
-              </View>
-            ) : (
-              messages.map((message) => (
-                <View
-                  key={message.id}
-                  style={[
-                    styles.messageBubble,
-                    message.sent ? styles.sentBubble : styles.receivedBubble,
-                  ]}
-                >
-                  <Text style={[
-                    styles.messageText,
-                    message.sent ? styles.sentText : styles.receivedText,
-                  ]}>
-                    {message.text}
-                  </Text>
-                  <Text style={[
-                    styles.messageTime,
-                    message.sent ? styles.sentTime : styles.receivedTime,
-                  ]}>
-                    {message.time}
-                  </Text>
-                </View>
-              ))
-            )}
-          </ScrollView>
-
-          {/* Quick Actions */}
-          <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.quickActionBtn} onPress={handleScheduleWalk}>
-              <Ionicons name="walk" size={18} color={colors.primary} />
-              <Text style={styles.quickActionText}>Schedule Walk</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickActionBtn} onPress={handleScheduleHosting}>
-              <Ionicons name="home" size={18} color={colors.primary} />
-              <Text style={styles.quickActionText}>Schedule Hosting</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Input */}
-          <View style={styles.inputContainer}>
-            <TouchableOpacity style={styles.attachButton}>
-              <Ionicons name="add-circle" size={28} color={colors.primary} />
-            </TouchableOpacity>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Type a message..."
-                placeholderTextColor={colors.gray[400]}
-                value={messageText}
-                onChangeText={setMessageText}
-                multiline
-              />
-            </View>
-            <TouchableOpacity
-              style={[styles.sendButton, (!messageText.trim() || sending) && styles.sendButtonDisabled]}
-              onPress={sendMessage}
-              disabled={!messageText.trim() || sending}
-            >
-              {sending ? (
-                <ActivityIndicator size="small" color={colors.white} />
-              ) : (
-                <Ionicons name="send" size={20} color={colors.white} />
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+        <ChatInterface
+          chatId={selectedConversation.id}
+          recipientId={selectedConversation.recipientId || selectedConversation.id.replace('new-', '')}
+          recipientName={selectedConversation.name}
+          recipientPhoto={selectedConversation.avatar}
+          petName={selectedConversation.petName}
+          petId={selectedConversation.petId}
+          onBack={handleBackFromChat}
+        />
       </SafeAreaView>
     );
   }

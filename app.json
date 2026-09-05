@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pawzr.app",
-      "buildNumber": "39",
+      "buildNumber": "46",
       "usesAppleSignIn": true,
       "splash": {
         "image": "./assets/splash-icon.png",

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,17 +10,22 @@ import {
   Image,
   Modal,
   ActivityIndicator,
+  Easing,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation, CommonActions } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
-import { likesApi, swipeApi } from '../lib/api';
+import { likesApi } from '../lib/api';
 import { useLocation } from '../hooks/useLocation';
 import logger from '../lib/logger';
 import { getDistanceString } from '../utils/distance';
-import { isTablet, getCardDimensions } from '../utils/responsive';
+import { getCardDimensions } from '../utils/responsive';
+
+// Confetti configuration
+const CONFETTI_COUNT = 50;
+const CONFETTI_COLORS = ['#F97316', '#10B981', '#3B82F6', '#F59E0B', '#EC4899', '#8B5CF6'];
 
 const { width, height } = Dimensions.get('window');
 // Use responsive card dimensions
@@ -134,9 +139,63 @@ const mockLovers: PetLover[] = [
   },
 ];
 
+// Confetti Particle Component
+interface ConfettiParticle {
+  x: Animated.Value;
+  y: Animated.Value;
+  rotation: Animated.Value;
+  scale: Animated.Value;
+  color: string;
+  size: number;
+}
+
+const createConfettiParticles = (): ConfettiParticle[] => {
+  return Array.from({ length: CONFETTI_COUNT }, () => ({
+    x: new Animated.Value(Math.random() * width),
+    y: new Animated.Value(-20),
+    rotation: new Animated.Value(0),
+    scale: new Animated.Value(1),
+    color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+    size: Math.random() * 10 + 6,
+  }));
+};
+
+const ConfettiView = ({ particles, visible }: { particles: ConfettiParticle[]; visible: boolean }) => {
+  if (!visible) return null;
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {particles.map((particle, index) => (
+        <Animated.View
+          key={index}
+          style={[
+            styles.confettiPiece,
+            {
+              backgroundColor: particle.color,
+              width: particle.size,
+              height: particle.size * 0.6,
+              borderRadius: particle.size * 0.1,
+              transform: [
+                { translateX: particle.x },
+                { translateY: particle.y },
+                {
+                  rotate: particle.rotation.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg'],
+                  }),
+                },
+                { scale: particle.scale },
+              ],
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+};
+
 export default function LoverMatchScreen() {
   const navigation = useNavigation<any>();
-  const insets = useSafeAreaInsets();
   const { location } = useLocation();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -146,9 +205,20 @@ export default function LoverMatchScreen() {
   const [matchedLover, setMatchedLover] = useState<PetLover | null>(null);
   const [matchConversationId, setMatchConversationId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [lovers, setLovers] = useState<PetLover[]>(mockLovers);
-  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [lovers] = useState<PetLover[]>(mockLovers);
   const [startingChat, setStartingChat] = useState(false);
+
+
+  // Match modal animation values
+  const [confettiParticles] = useState<ConfettiParticle[]>(() => createConfettiParticles());
+  const [showConfetti, setShowConfetti] = useState(false);
+  const modalScale = useRef(new Animated.Value(0)).current;
+  const modalOpacity = useRef(new Animated.Value(0)).current;
+  const titleScale = useRef(new Animated.Value(0)).current;
+  const heartPulse = useRef(new Animated.Value(1)).current;
+  const leftPhotoScale = useRef(new Animated.Value(0)).current;
+  const rightPhotoScale = useRef(new Animated.Value(0)).current;
+  const buttonsOpacity = useRef(new Animated.Value(0)).current;
 
   const position = useRef(new Animated.ValueXY()).current;
 
@@ -164,6 +234,153 @@ export default function LoverMatchScreen() {
     }
     return lover.distance || 'Distance unknown';
   };
+
+  // Start confetti animation
+  const startConfettiAnimation = useCallback(() => {
+    confettiParticles.forEach((particle) => {
+      // Reset positions with random starting X
+      const startX = Math.random() * width;
+      particle.x.setValue(startX);
+      particle.y.setValue(-20);
+      particle.rotation.setValue(0);
+      particle.scale.setValue(1);
+
+      // Random destination based on starting position
+      const destX = startX + (Math.random() - 0.5) * 200;
+      const destY = height + 100;
+      const duration = 2500 + Math.random() * 1500;
+
+      Animated.parallel([
+        Animated.timing(particle.y, {
+          toValue: destY,
+          duration,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.quad),
+        }),
+        Animated.timing(particle.x, {
+          toValue: destX,
+          duration,
+          useNativeDriver: true,
+        }),
+        Animated.timing(particle.rotation, {
+          toValue: Math.random() * 4 + 2,
+          duration,
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.timing(particle.scale, {
+            toValue: 1.2,
+            duration: duration * 0.3,
+            useNativeDriver: true,
+          }),
+          Animated.timing(particle.scale, {
+            toValue: 0,
+            duration: duration * 0.7,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    });
+  }, [confettiParticles]);
+
+  // Start heart pulse animation
+  const startHeartPulse = useCallback(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(heartPulse, {
+          toValue: 1.3,
+          duration: 400,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.ease),
+        }),
+        Animated.timing(heartPulse, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+          easing: Easing.in(Easing.ease),
+        }),
+      ])
+    ).start();
+  }, [heartPulse]);
+
+  // Match modal entrance animation
+  const startMatchAnimation = useCallback(() => {
+    // Reset all values
+    modalScale.setValue(0);
+    modalOpacity.setValue(0);
+    titleScale.setValue(0);
+    leftPhotoScale.setValue(0);
+    rightPhotoScale.setValue(0);
+    buttonsOpacity.setValue(0);
+
+    // Start confetti
+    setShowConfetti(true);
+    startConfettiAnimation();
+
+    // Modal entrance
+    Animated.parallel([
+      Animated.spring(modalScale, {
+        toValue: 1,
+        friction: 6,
+        tension: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(modalOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Staggered animations for content
+    setTimeout(() => {
+      Animated.spring(titleScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 120,
+        useNativeDriver: true,
+      }).start();
+    }, 150);
+
+    setTimeout(() => {
+      Animated.spring(leftPhotoScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 100,
+        useNativeDriver: true,
+      }).start();
+    }, 300);
+
+    setTimeout(() => {
+      startHeartPulse();
+    }, 400);
+
+    setTimeout(() => {
+      Animated.spring(rightPhotoScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 100,
+        useNativeDriver: true,
+      }).start();
+    }, 450);
+
+    setTimeout(() => {
+      Animated.timing(buttonsOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }, 600);
+  }, [modalScale, modalOpacity, titleScale, leftPhotoScale, rightPhotoScale, buttonsOpacity, startConfettiAnimation, startHeartPulse]);
+
+  // Trigger animation when modal shows
+  useEffect(() => {
+    if (showMatchModal && matchedLover) {
+      startMatchAnimation();
+    } else {
+      setShowConfetti(false);
+    }
+  }, [showMatchModal, matchedLover, startMatchAnimation]);
 
   const rotation = position.x.interpolate({
     inputRange: [-width / 2, 0, width / 2],
@@ -304,8 +521,8 @@ export default function LoverMatchScreen() {
   const currentLover = lovers[currentIndex];
   const nextLover = lovers[currentIndex + 1];
 
-  // Empty state
-  if (currentIndex >= lovers.length) {
+  // Empty state - check both index AND if currentLover exists
+  if (currentIndex >= lovers.length || !currentLover) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.emptyContainer}>
@@ -462,108 +679,123 @@ export default function LoverMatchScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Match Modal */}
-      <Modal visible={showMatchModal} animationType="fade" transparent>
-        <View style={styles.matchOverlay}>
-          <View style={styles.matchContent}>
-            <Text style={styles.matchTitle}>It's a Match!</Text>
-            <Text style={styles.matchSubtitle}>
-              You and {matchedLover?.name} liked each other
-            </Text>
+      {/* Bumble-Style Match Modal with Confetti */}
+      <Modal visible={showMatchModal} animationType="none" transparent>
+        <Animated.View style={[styles.matchOverlay, { opacity: modalOpacity }]}>
+          {/* Confetti Animation */}
+          <ConfettiView particles={confettiParticles} visible={showConfetti} />
 
+          <Animated.View
+            style={[
+              styles.matchContent,
+              {
+                transform: [{ scale: modalScale }],
+                opacity: modalOpacity,
+              }
+            ]}
+          >
+            {/* Animated Title */}
+            <Animated.View style={{ transform: [{ scale: titleScale }] }}>
+              <Text style={styles.matchTitle}>It's a Match!</Text>
+              <View style={styles.matchTitleEmoji}>
+                <Text style={styles.emojiText}>🎉</Text>
+              </View>
+            </Animated.View>
+
+            <Animated.Text style={[styles.matchSubtitle, { opacity: titleScale }]}>
+              You and {matchedLover?.name} liked each other
+            </Animated.Text>
+
+            {/* Animated Profile Photos */}
             <View style={styles.matchImages}>
-              <View style={styles.matchImageContainer}>
+              <Animated.View
+                style={[
+                  styles.matchImageContainer,
+                  { transform: [{ scale: leftPhotoScale }] }
+                ]}
+              >
                 <Image
                   source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200' }}
                   style={styles.matchImage}
                 />
-              </View>
-              <View style={styles.matchHeart}>
+              </Animated.View>
+
+              {/* Pulsing Heart */}
+              <Animated.View
+                style={[
+                  styles.matchHeart,
+                  { transform: [{ scale: heartPulse }] }
+                ]}
+              >
                 <Ionicons name="heart" size={28} color="#F97316" />
-              </View>
-              <View style={styles.matchImageContainer}>
+              </Animated.View>
+
+              <Animated.View
+                style={[
+                  styles.matchImageContainer,
+                  { transform: [{ scale: rightPhotoScale }] }
+                ]}
+              >
                 <Image
                   source={{ uri: matchedLover?.photos[0] }}
                   style={styles.matchImage}
                 />
-              </View>
+              </Animated.View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.messageBtn, startingChat && styles.messageBtnDisabled]}
-              disabled={startingChat}
-              onPress={async () => {
-                if (!matchedLover || startingChat) {
-                  return;
-                }
-
-                setStartingChat(true);
-
-                try {
-                  // Always create/get conversation before navigating
-                  let convId = matchConversationId;
-                  if (!convId) {
-                    logger.log('Creating conversation with user:', matchedLover.id);
-                    const response = await likesApi.createConversation(matchedLover.id);
-                    logger.log('Create conversation response:', response);
-                    convId = response.conversationId || response.conversation?.id || response.id;
+            {/* Animated Buttons */}
+            <Animated.View style={[styles.matchButtons, { opacity: buttonsOpacity }]}>
+              <TouchableOpacity
+                style={[styles.messageBtn, startingChat && styles.messageBtnDisabled]}
+                disabled={startingChat}
+                onPress={async () => {
+                  if (!matchedLover || startingChat) {
+                    return;
                   }
 
-                  // Close modal first
-                  setShowMatchModal(false);
-                  setStartingChat(false);
+                  setStartingChat(true);
 
-                  // Navigate to chat tab first, then set params
-                  navigation.navigate('Chat');
-                  setTimeout(() => {
-                    navigation.setParams({
-                      conversationId: convId || `new-${matchedLover.id}`,
-                      matchedUser: {
-                        id: matchedLover.id,
-                        name: matchedLover.name,
-                        type: 'lover' as const,
-                        photo: matchedLover.photos[0],
-                        online: true,
-                        verified: matchedLover.verified,
-                      },
-                    });
-                  }, 100);
-                } catch (error) {
-                  logger.log('Error creating conversation:', error);
-                  setStartingChat(false);
+                  // Prepare navigation params
+                  const chatParams = {
+                    conversationId: matchConversationId || `new-${matchedLover.id}`,
+                    matchedUser: {
+                      id: matchedLover.id,
+                      name: matchedLover.name,
+                      type: 'lover' as const,
+                      photo: matchedLover.photos?.[0],
+                      online: true,
+                      verified: matchedLover.verified,
+                    },
+                  };
+
+                  // Close modal and navigate
                   setShowMatchModal(false);
-                  // Still navigate to chat
-                  navigation.navigate('Chat');
+
+                  // Navigate after a short delay to let modal close
                   setTimeout(() => {
-                    navigation.setParams({
-                      conversationId: `new-${matchedLover.id}`,
-                      matchedUser: {
-                        id: matchedLover.id,
-                        name: matchedLover.name,
-                        type: 'lover' as const,
-                        photo: matchedLover.photos[0],
-                        online: true,
-                        verified: matchedLover.verified,
-                      },
-                    });
-                  }, 100);
-                }
-              }}
-            >
-              {startingChat ? (
-                <ActivityIndicator color={colors.white} size="small" />
-              ) : (
-                <Text style={styles.messageBtnText}>Send Message</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.keepSwipingBtn}
-              onPress={() => setShowMatchModal(false)}
-            >
-              <Text style={styles.keepSwipingText}>Keep Swiping</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+                    setStartingChat(false);
+                    navigation.navigate('Chat', chatParams);
+                  }, 200);
+                }}
+              >
+                {startingChat ? (
+                  <ActivityIndicator color={colors.white} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="chatbubble" size={20} color={colors.white} style={{ marginRight: 8 }} />
+                    <Text style={styles.messageBtnText}>Send Message</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.keepSwipingBtn}
+                onPress={() => setShowMatchModal(false)}
+              >
+                <Text style={styles.keepSwipingText}>Keep Swiping</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </Animated.View>
+        </Animated.View>
       </Modal>
     </SafeAreaView>
   );
@@ -858,6 +1090,8 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     width: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
     marginBottom: 12,
   },
   messageBtnDisabled: {
@@ -875,5 +1109,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.gray[500],
     fontWeight: '500',
+  },
+  // Confetti styles
+  confettiPiece: {
+    position: 'absolute',
+  },
+  // Enhanced match modal styles
+  matchTitleEmoji: {
+    position: 'absolute',
+    top: -10,
+    right: -30,
+  },
+  emojiText: {
+    fontSize: 28,
+  },
+  matchButtons: {
+    width: '100%',
+    alignItems: 'center',
   },
 });

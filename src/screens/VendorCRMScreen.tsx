@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
-import { colors } from '../theme/colors';
+import { colors, roleColors, getRoleColor } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 
@@ -196,15 +196,16 @@ export default function VendorCRMScreen() {
   const [offerDiscount, setOfferDiscount] = useState('');
 
   const getRoleConfig = () => {
+    const roleColor = getRoleColor(userRole);
     switch (userRole) {
       case 'VET':
-        return { color: '#10B981', title: 'Patients' };
+        return { color: roleColor, title: 'Patients' };
       case 'GROOMER':
-        return { color: '#8B5CF6', title: 'Clients' };
+        return { color: roleColor, title: 'Clients' };
       case 'SUPPLIER':
-        return { color: '#3B82F6', title: 'Customers' };
+        return { color: roleColor, title: 'Customers' };
       default:
-        return { color: '#F97316', title: 'Customers' };
+        return { color: roleColor, title: 'Customers' };
     }
   };
 

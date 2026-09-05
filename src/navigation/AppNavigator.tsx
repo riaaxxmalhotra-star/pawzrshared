@@ -245,50 +245,65 @@ function MainNavigator() {
     }
   };
 
-  // Get icon for second tab
+  // Get icon for second tab - ALWAYS use consistent wrapper to prevent visual shrinking
   const getSecondTabIcon = (focused: boolean) => {
+    const wrapperStyle = [
+      styles.tabIconWrapper,
+      focused && { backgroundColor: `${roleColor}15` }
+    ];
+
     switch (userRole) {
       case 'LOVER':
       case 'OWNER':
         return (
-          <Ionicons
-            name="heart"
-            size={focused ? 28 : 24}
-            color={focused ? roleColor : colors.gray[400]}
-          />
+          <View style={wrapperStyle}>
+            <Ionicons
+              name="heart"
+              size={24}
+              color={focused ? roleColor : colors.gray[400]}
+            />
+          </View>
         );
       case 'VET':
       case 'GROOMER':
         return (
-          <Ionicons
-            name={focused ? 'calendar' : 'calendar-outline'}
-            size={focused ? 26 : 24}
-            color={focused ? roleColor : colors.gray[400]}
-          />
+          <View style={wrapperStyle}>
+            <Ionicons
+              name={focused ? 'calendar' : 'calendar-outline'}
+              size={24}
+              color={focused ? roleColor : colors.gray[400]}
+            />
+          </View>
         );
       case 'SUPPLIER':
         return (
-          <Ionicons
-            name={focused ? 'receipt' : 'receipt-outline'}
-            size={focused ? 26 : 24}
-            color={focused ? roleColor : colors.gray[400]}
-          />
+          <View style={wrapperStyle}>
+            <Ionicons
+              name={focused ? 'receipt' : 'receipt-outline'}
+              size={24}
+              color={focused ? roleColor : colors.gray[400]}
+            />
+          </View>
         );
       case 'CAFE':
         return (
-          <Ionicons
-            name={focused ? 'calendar' : 'calendar-outline'}
-            size={focused ? 26 : 24}
-            color={focused ? roleColor : colors.gray[400]}
-          />
+          <View style={wrapperStyle}>
+            <Ionicons
+              name={focused ? 'calendar' : 'calendar-outline'}
+              size={24}
+              color={focused ? roleColor : colors.gray[400]}
+            />
+          </View>
         );
       default:
         return (
-          <Ionicons
-            name="heart"
-            size={focused ? 28 : 24}
-            color={focused ? roleColor : colors.gray[400]}
-          />
+          <View style={wrapperStyle}>
+            <Ionicons
+              name="heart"
+              size={24}
+              color={focused ? roleColor : colors.gray[400]}
+            />
+          </View>
         );
     }
   };
@@ -321,9 +336,10 @@ function MainNavigator() {
                 iconName = 'ellipse';
             }
 
+            // ALWAYS use consistent wrapper to prevent visual shrinking
             return (
-              <View style={focused ? [styles.activeTab, { backgroundColor: `${roleColor}15` }] : undefined}>
-                <Ionicons name={iconName} size={focused ? 26 : 24} color={color} />
+              <View style={[styles.tabIconWrapper, focused && { backgroundColor: `${roleColor}15` }]}>
+                <Ionicons name={iconName} size={24} color={color} />
               </View>
             );
           },
@@ -394,7 +410,7 @@ function MainNavigator() {
   return (
     <MainTab.Navigator
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ focused, color }) => {
           let iconName: keyof typeof Ionicons.glyphMap;
 
           switch (route.name) {
@@ -404,11 +420,12 @@ function MainNavigator() {
             case 'Swipe':
               return getSecondTabIcon(focused);
             case 'Events':
+              // ALWAYS use consistent wrapper to prevent visual shrinking
               return (
-                <View style={focused ? [styles.activeTab, { backgroundColor: `${roleColor}15` }] : undefined}>
+                <View style={[styles.tabIconWrapper, focused && { backgroundColor: `${roleColor}15` }]}>
                   <Ionicons
                     name={focused ? 'calendar' : 'calendar-outline'}
-                    size={focused ? 26 : 24}
+                    size={24}
                     color={color}
                   />
                 </View>
@@ -423,9 +440,10 @@ function MainNavigator() {
               iconName = 'ellipse';
           }
 
+          // ALWAYS use consistent wrapper to prevent visual shrinking
           return (
-            <View style={focused ? [styles.activeTab, { backgroundColor: `${roleColor}15` }] : undefined}>
-              <Ionicons name={iconName} size={focused ? 26 : 24} color={color} />
+            <View style={[styles.tabIconWrapper, focused && { backgroundColor: `${roleColor}15` }]}>
+              <Ionicons name={iconName} size={24} color={color} />
             </View>
           );
         },
@@ -547,9 +565,12 @@ export default function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
-  activeTab: {
-    backgroundColor: `${colors.primary}15`,
-    padding: 8,
+  // Always use this wrapper - consistent size prevents icon "shrinking"
+  tabIconWrapper: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 16,
   },
 });

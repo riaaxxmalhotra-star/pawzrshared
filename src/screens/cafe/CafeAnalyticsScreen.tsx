@@ -11,9 +11,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { colors } from '../../theme/colors';
+import { colors, roleColors } from '../../theme/colors';
 
-const CAFE_COLOR = '#14B8A6';
+// Use centralized role color
+const CAFE_COLOR = roleColors.CAFE;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type TimeRange = 'today' | 'week' | 'month' | 'year';
