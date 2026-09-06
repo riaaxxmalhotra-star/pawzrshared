@@ -3,10 +3,15 @@ default_platform(:ios)
 platform :ios do
   desc "Submit the latest build for App Store review"
   lane :submit_review do
+    # Reviewer password comes from the environment, never from the repo.
+    # export PAWZR_DEMO_PASSWORD='...' before running this lane.
+    demo_password = ENV["PAWZR_DEMO_PASSWORD"]
+    UI.user_error!("Set PAWZR_DEMO_PASSWORD before submitting for review") if demo_password.nil? || demo_password.empty?
+
     api_key = app_store_connect_api_key(
       key_id: "KQ7X2N27KA",
       issuer_id: "2fff0e2e-7178-4d3c-a31c-e52f5f454c7e",
-      key_filepath: File.expand_path("~/Downloads/AuthKey_KQ7X2N27KA.p8")
+      key_filepath: File.expand_path(ENV.fetch("APP_STORE_CONNECT_API_KEY_PATH", "~/Downloads/AuthKey_KQ7X2N27KA.p8"))
     )
 
     deliver(
@@ -31,7 +36,7 @@ platform :ios do
       },
       app_review_information: {
         demo_user: "demo@pawzr.app",
-        demo_password: "PawzrDemo2024!",
+        demo_password: demo_password,
         notes: "Tap the 'Try Demo' button on the login screen to access the app with a pre-configured demo account. This demo account has sample pets and profile data for testing all features."
       }
     )

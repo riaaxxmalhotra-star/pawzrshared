@@ -7,6 +7,7 @@ import {
   Image,
   ActivityIndicator,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,7 +66,14 @@ export default function LoginScreen() {
           {/* Quick Demo - For investors & reviewers */}
           <TouchableOpacity
             style={styles.demoButton}
-            onPress={signInWithDemoAccount}
+            onPress={() =>
+              signInWithDemoAccount().catch((error: unknown) =>
+                Alert.alert(
+                  'Demo unavailable',
+                  error instanceof Error ? error.message : 'Could not start the demo account.'
+                )
+              )
+            }
             disabled={isLoading}
           >
             <Ionicons name="rocket" size={20} color={colors.white} />

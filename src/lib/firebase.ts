@@ -17,13 +17,15 @@ import {
 } from 'firebase/firestore';
 import ENV from '../config/env';
 
-// Firebase configuration from environment variables
+// Firebase configuration from environment variables only — no project
+// fallbacks. Fallbacks would defeat isFirebaseConfigured and silently bind
+// the bundle to the wrong project. Empty values = honest degraded chat.
 const firebaseConfig = {
   apiKey: ENV.FIREBASE_API_KEY,
-  authDomain: ENV.FIREBASE_AUTH_DOMAIN || 'pawzr-1b4a7.firebaseapp.com',
-  projectId: ENV.FIREBASE_PROJECT_ID || 'pawzr-1b4a7',
-  storageBucket: ENV.FIREBASE_STORAGE_BUCKET || 'pawzr-1b4a7.firebasestorage.app',
-  messagingSenderId: ENV.FIREBASE_MESSAGING_SENDER_ID || '13399347964',
+  authDomain: ENV.FIREBASE_AUTH_DOMAIN,
+  projectId: ENV.FIREBASE_PROJECT_ID,
+  storageBucket: ENV.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: ENV.FIREBASE_MESSAGING_SENDER_ID,
   appId: ENV.FIREBASE_APP_ID,
 };
 

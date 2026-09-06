@@ -1,13 +1,26 @@
 import React, { useEffect, useState, Component, ErrorInfo, ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from './src/lib/auth';
 import AppNavigator from './src/navigation/AppNavigator';
 import { initSentry, captureError, Sentry } from './src/lib/sentry';
+import { validateEnv } from './src/config/env';
 import { registerForPushNotifications, addNotificationResponseListener } from './src/lib/notifications';
+
+// Fail loudly (never silently) when required env is missing or placeholder.
+// Non-blocking: the app still renders; Google sign-in will keep failing until fixed.
+const envCheck = validateEnv();
+if (!envCheck.valid) {
+  const message = `Missing required env vars: ${envCheck.missing.join(', ')}. Copy .env.example to .env and fill them via EAS secrets.`;
+  console.error(`[env] ${message}`);
+  captureError(new Error(message));
+  if (__DEV__) {
+    Alert.alert('Environment misconfigured', message);
+  }
+}
 
 // Initialize Sentry for error monitoring
 initSentry();

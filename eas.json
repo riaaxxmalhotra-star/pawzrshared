@@ -45,7 +45,7 @@
         "ascAppId": "6757728579"
       },
       "android": {
-        "serviceAccountKeyPath": "/Users/riaamalhotra/Downloads/warm-castle-486005-j4-ebd9694b1285.json",
+        "serviceAccountKeyPath": "./secrets/google-play-service-account.json",
         "track": "internal"
       }
     }

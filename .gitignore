@@ -30,17 +30,28 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# local env files (explicit list — NEVER use a blanket `.env.*` rule here,
+# it would ignore the committed `.env.example` template)
 .env
 .env.local
+.env*.local
+.env.development
+.env.preview
 .env.production
+.env.staging
 
 # Credentials (NEVER commit these)
 credentials.json
 *.keystore
 google-services.json
 GoogleService-Info.plist
+*-service-account.json
+AuthKey_*.p8
+/secrets/
+
+# Build artifacts (NEVER commit these)
+*.ipa
+fastlane/report.xml
 
 # typescript
 *.tsbuildinfo

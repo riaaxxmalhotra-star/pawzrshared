@@ -96,9 +96,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Use environment configuration for OAuth credentials
-const GOOGLE_WEB_CLIENT_ID = ENV.GOOGLE_WEB_CLIENT_ID || '1094158533320-aumh0qgrr06o0o17umlulthgj3m72dlq.apps.googleusercontent.com';
-const GOOGLE_IOS_CLIENT_ID = ENV.GOOGLE_IOS_CLIENT_ID || '1094158533320-7fugh8bijpp1770uo21b0ubf8f36odp1.apps.googleusercontent.com';
+// OAuth credentials come from env config only — no second-layer fallbacks
+// (a stale hardcoded ID here would silently override a correct env value).
+const GOOGLE_WEB_CLIENT_ID = ENV.GOOGLE_WEB_CLIENT_ID;
+const GOOGLE_IOS_CLIENT_ID = ENV.GOOGLE_IOS_CLIENT_ID;
 
 // Configure Google Sign-In if available
 if (GoogleSignin) {
@@ -476,8 +477,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // Demo account for App Store review
-  // This creates a demo user with sample data for Apple reviewers
+  // Local-only until Wave 1 replaces it with a server-issued demo session.
+  // Fail closed when unconfigured instead of creating a broken profile.
   async function signInWithDemoAccount() {
+    if (!ENV.DEMO_EMAIL) {
+      throw new Error(
+        'Demo account is not configured. Set EXPO_PUBLIC_DEMO_EMAIL to enable it.'
+      );
+    }
     try {
       setIsLoading(true);
 
