@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { apiRequest } from '../lib/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
@@ -188,7 +187,7 @@ export default function OnboardingScreen({ onComplete, userId }: Props) {
 
     setSaving(true);
     try {
-      const token = await AsyncStorage.getItem('token');
+      // Auth header is attached by apiRequest from the secure token store.
       const profileData = {
         userId,
         role: selectedRole,
@@ -227,9 +226,6 @@ export default function OnboardingScreen({ onComplete, userId }: Props) {
 
       await apiRequest('/users/update-profile', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(profileData),
       });
 

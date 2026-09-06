@@ -537,9 +537,11 @@ function CalendarOrOrdersScreen() {
 }
 
 export default function AppNavigator() {
-  const { user, isLoading } = useAuth();
+  // Gate the full-screen loader on restore only: interactive sign-in spinners
+  // (isLoading) must never unmount navigation and lose its state.
+  const { user, isRestoring } = useAuth();
 
-  if (isLoading) {
+  if (isRestoring) {
     return <LoadingScreen />;
   }
 

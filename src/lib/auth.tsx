@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform, Alert } from 'react-native';
-import { authApi, profileApi } from './api';
+import { authApi, profileApi, setUnauthorizedHandler } from './api';
+import { setAuthToken, clearAuthToken } from './tokenStore';
+import { setUserContext, clearUserContext, addBreadcrumb } from './sentry';
 import logger from './logger';
 import ENV from '../config/env';
 
@@ -82,7 +84,10 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
+  /** Busy with an interactive sign-in/out request (button spinners). */
   isLoading: boolean;
+  /** True only during the startup session restore (full-screen loader). */
+  isRestoring: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   isAppleAuthAvailable: boolean;
@@ -116,8 +121,12 @@ if (GoogleSignin) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(true);
   const [isAppleAuthAvailable, setIsAppleAuthAvailable] = useState(false);
+  // Mirror of the session for async callbacks (401 handler) that would
+  // otherwise capture a stale first-render closure.
+  const userRef = useRef<User | null>(null);
 
   // Check Apple Auth availability on iOS
   useEffect(() => {
@@ -126,53 +135,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Check for stored user on mount with timeout fallback
+  // Restore the session on mount. No forced timeouts: the restore either
+  // resolves or fails fast, and the UI gates on isRestoring — never on the
+  // interactive isLoading flag, so sign-in spinners can't unmount navigation.
   useEffect(() => {
-    // Safety timeout - never stay loading forever (reduced to 2 seconds for faster startup)
-    const timeout = setTimeout(() => {
-      if (isLoading) {
-        logger.log('Auth timeout - forcing loading complete');
-        setIsLoading(false);
-      }
-    }, 2000);
-
-    // Start checking stored user immediately
     checkStoredUser();
-
-    return () => clearTimeout(timeout);
+    // A 401 sent with a rejected token means the session is dead.
+    setUnauthorizedHandler(() => {
+      void signOut();
+    });
+    return () => setUnauthorizedHandler(null);
   }, []);
+
+  // Profile storage keys are lowercased: `User@X.com` and `user@x.com` are the
+  // same account. Reads fall back to the legacy exact-case key once.
+  function profileKey(email: string): string {
+    return `userProfile_${email.trim().toLowerCase()}`;
+  }
+
+  async function lookupSavedProfile(email: string): Promise<User | null> {
+    for (const key of [`userProfile_${email}`, profileKey(email)]) {
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (raw) return JSON.parse(raw) as User;
+      } catch {
+        // try the next key variant
+      }
+    }
+    return null;
+  }
+
+  // Single write path for every session change: state + ref + Sentry context
+  // + both storage slots. All profile/role/onboarding updates funnel here.
+  async function persistSession(finalUser: User) {
+    userRef.current = finalUser;
+    setUser(finalUser);
+    setUserContext({ id: finalUser.id, email: finalUser.email, role: finalUser.role });
+    await AsyncStorage.setItem('user', JSON.stringify(finalUser));
+    await AsyncStorage.setItem(profileKey(finalUser.email), JSON.stringify(finalUser));
+  }
 
   async function checkStoredUser() {
     try {
       logger.log('Checking stored user...');
+      const storedUser = await AsyncStorage.getItem('user');
 
-      // Add timeout to AsyncStorage read (1 second max for fast startup)
-      const storagePromise = AsyncStorage.getItem('user');
-      const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), 1000)
-      );
-
-      const storedUser = await Promise.race([storagePromise, timeoutPromise]);
-
-      logger.log('Stored user found:', !!storedUser);
       if (storedUser) {
         try {
-          const parsed = JSON.parse(storedUser);
-          logger.log('User loaded:', parsed?.email);
+          const parsed = JSON.parse(storedUser) as User;
+          userRef.current = parsed;
           setUser(parsed);
+          setUserContext({ id: parsed.id, email: parsed.email, role: parsed.role });
         } catch (parseError) {
           logger.error('Error parsing stored user');
           // Clear corrupted data
-          AsyncStorage.removeItem('user').catch(() => {});
+          await AsyncStorage.removeItem('user').catch(() => {});
         }
       }
     } catch (error) {
       logger.error('Error checking stored user');
       // Clear corrupted storage
-      AsyncStorage.removeItem('user').catch(() => {});
+      await AsyncStorage.removeItem('user').catch(() => {});
     } finally {
-      logger.log('Setting isLoading to false');
-      setIsLoading(false);
+      setIsRestoring(false);
     }
   }
 
@@ -192,8 +217,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Check if Google Play Services are available
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      // hasPlayServices throws on iOS — only check on Android.
+      if (Platform.OS === 'android') {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      }
 
       // Sign in with Google
       const signInResult = await GoogleSignin.signIn();
@@ -213,77 +240,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           logger.log('API response received');
           if (result.user) {
             apiUser = result.user;
-            await AsyncStorage.setItem('token', result.token || '');
+            if (result.token) {
+              await setAuthToken(result.token);
+            }
           }
         }
       } catch (apiError: any) {
         logger.log('Backend API unavailable, using local auth');
       }
 
-      // Determine final user - always check persistent storage first
+      // Determine final user — the saved profile is the source of truth.
+      // Fresh auth data only fills gaps; it never overwrites saved data.
+      const userEmail = (apiUser?.email || googleUser.email).trim().toLowerCase();
+      const savedProfile = await lookupSavedProfile(userEmail);
+      const googleName =
+        typeof googleUser.name === 'string' && googleUser.name.trim() !== ''
+          ? googleUser.name
+          : undefined;
+      const googlePhoto =
+        typeof googleUser.photo === 'string' && googleUser.photo !== ''
+          ? googleUser.photo
+          : undefined;
+
       let finalUser: User;
-      const userEmail = apiUser?.email || googleUser.email;
-
-      // ALWAYS check persistent profile storage first (survives logout/login)
-      const savedProfileData = await AsyncStorage.getItem(`userProfile_${userEmail}`);
-
-      if (savedProfileData) {
-        // Found saved profile - this user has logged in before
-        const savedProfile = JSON.parse(savedProfileData);
+      if (savedProfile) {
         logger.log('Restoring saved profile');
-
-        // Merge: saved profile is base, update with fresh auth data (but preserve onboarding fields)
         finalUser = {
           ...savedProfile,
-          id: apiUser?.id || googleUser.id || savedProfile.id,
-          name: apiUser?.name || googleUser.name || savedProfile.name,
-          image: apiUser?.image || googleUser.photo || savedProfile.image,
-          role: savedProfile.role,
-          onboardingComplete: savedProfile.onboardingComplete,
-          phone: savedProfile.phone,
-          address: savedProfile.address,
-          addressLine1: savedProfile.addressLine1,
-          addressLine2: savedProfile.addressLine2,
-          landmark: savedProfile.landmark,
-          pincode: savedProfile.pincode,
-          city: savedProfile.city,
-          state: savedProfile.state,
-          bio: savedProfile.bio,
-          dob: savedProfile.dob,
-          photos: savedProfile.photos,
-          location: savedProfile.location,
-          aadhaarVerified: savedProfile.aadhaarVerified,
-          pets: savedProfile.pets,
-          preferredPets: savedProfile.preferredPets,
-          services: savedProfile.services,
-          availability: savedProfile.availability,
-          experience: savedProfile.experience,
-          businessName: savedProfile.businessName,
-          gstNumber: savedProfile.gstNumber,
-          googleMapsLink: savedProfile.googleMapsLink,
-          categories: savedProfile.categories,
-          deliveryAvailable: savedProfile.deliveryAvailable,
-          deliveryRadius: savedProfile.deliveryRadius,
-          minOrder: savedProfile.minOrder,
+          email: userEmail,
+          id: apiUser?.id || savedProfile.id,
+          name: savedProfile.name || apiUser?.name || googleName || '',
+          image: savedProfile.image || apiUser?.image || googlePhoto,
         };
       } else if (apiUser) {
-        finalUser = apiUser;
+        finalUser = { ...apiUser, email: userEmail };
       } else {
         // Create new user from Google
         finalUser = {
           id: googleUser.id,
-          email: googleUser.email,
-          name: googleUser.name || '',
+          email: userEmail,
+          name: googleName || '',
           role: 'OWNER',
-          image: googleUser.photo || undefined,
+          image: googlePhoto,
           onboardingComplete: false,
         };
       }
 
       logger.log('User authenticated successfully');
-      setUser(finalUser);
-      await AsyncStorage.setItem('user', JSON.stringify(finalUser));
-      await AsyncStorage.setItem(`userProfile_${finalUser.email}`, JSON.stringify(finalUser));
+      addBreadcrumb('auth: google sign-in', 'auth', { backendLinked: !!apiUser });
+      await persistSession(finalUser);
     } catch (error: any) {
       logger.error('Google sign in error:', error.message || error);
 
@@ -316,55 +321,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       logger.log('Apple auth credential received');
 
-      // Get user info from credential
-      const appleEmail = credential.email || `apple_${credential.user}@privaterelay.appleid.com`;
-      const appleName = credential.fullName
-        ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
-        : 'Apple User';
+      // Apple returns email/fullName ONLY on first login. Persist the stable
+      // Apple user ID -> email mapping so later logins resolve the same account
+      // instead of orphaning into a fresh `apple_<id>@privaterelay` profile.
+      const appleUserId: string = credential.user;
+      if (credential.email) {
+        try {
+          await AsyncStorage.setItem(`appleId_${appleUserId}`, credential.email);
+        } catch {
+          // best-effort mapping write
+        }
+      }
+      let mappedEmail: string | null = credential.email ?? null;
+      if (!mappedEmail) {
+        try {
+          mappedEmail = await AsyncStorage.getItem(`appleId_${appleUserId}`);
+        } catch {
+          mappedEmail = null;
+        }
+      }
+      const normalizedEmail = mappedEmail
+        ? mappedEmail.trim().toLowerCase()
+        : `apple_${appleUserId}@privaterelay.appleid.com`;
 
-      // Check for saved profile by email first
-      const savedProfileData = await AsyncStorage.getItem(`userProfile_${appleEmail}`);
+      // Only treat the name as real when Apple actually provided one —
+      // never overwrite a saved name with the 'Apple User' placeholder.
+      const given = credential.fullName?.givenName ?? '';
+      const family = credential.fullName?.familyName ?? '';
+      const realAppleName = `${given} ${family}`.trim() || undefined;
+
+      const savedProfile = await lookupSavedProfile(normalizedEmail);
 
       let finalUser: User;
 
-      if (savedProfileData) {
+      if (savedProfile) {
         // Found saved profile - restore it
-        const savedProfile = JSON.parse(savedProfileData);
         logger.log('Restoring saved Apple profile');
         finalUser = {
           ...savedProfile,
-          id: credential.user,
-          name: appleName || savedProfile.name,
-          // Preserve all onboarding data
-          role: savedProfile.role,
-          onboardingComplete: savedProfile.onboardingComplete,
-          phone: savedProfile.phone,
-          addressLine1: savedProfile.addressLine1,
-          addressLine2: savedProfile.addressLine2,
-          landmark: savedProfile.landmark,
-          pincode: savedProfile.pincode,
-          city: savedProfile.city,
-          state: savedProfile.state,
-          bio: savedProfile.bio,
-          dob: savedProfile.dob,
-          photos: savedProfile.photos,
-          pets: savedProfile.pets,
+          email: normalizedEmail,
+          id: appleUserId,
+          name: realAppleName || savedProfile.name,
         };
       } else {
         // New user from Apple
         finalUser = {
-          id: credential.user,
-          email: appleEmail,
-          name: appleName,
+          id: appleUserId,
+          email: normalizedEmail,
+          name: realAppleName || 'Apple User',
           role: 'OWNER',
           onboardingComplete: false,
         };
       }
 
+      // Backend session (best-effort — local session when backend is unreachable).
+      if (credential.identityToken) {
+        try {
+          const result = await authApi.appleToken(credential.identityToken, { user: appleUserId });
+          if (result?.token) {
+            await setAuthToken(result.token);
+          }
+          if (result?.user) {
+            finalUser = { ...finalUser, ...result.user, email: normalizedEmail };
+          }
+        } catch {
+          logger.log('Backend Apple session unavailable, using local auth');
+        }
+      }
+
       logger.log('Apple user authenticated successfully');
-      setUser(finalUser);
-      await AsyncStorage.setItem('user', JSON.stringify(finalUser));
-      await AsyncStorage.setItem(`userProfile_${finalUser.email}`, JSON.stringify(finalUser));
+      addBreadcrumb('auth: apple sign-in', 'auth', { returning: !!savedProfile });
+      await persistSession(finalUser);
 
     } catch (error: any) {
       if (error.code === 'ERR_CANCELED') {
@@ -382,8 +409,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       // Save user profile by email before clearing session (so it can be restored on re-login)
-      if (user?.email) {
-        await AsyncStorage.setItem(`userProfile_${user.email}`, JSON.stringify(user));
+      const current = userRef.current ?? user;
+      if (current?.email) {
+        await AsyncStorage.setItem(profileKey(current.email), JSON.stringify(current));
       }
       // Sign out from Google if available
       if (GoogleSignin) {
@@ -393,8 +421,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Ignore Google sign out errors
         }
       }
+      await clearAuthToken();
       await AsyncStorage.removeItem('user');
-      await AsyncStorage.removeItem('token');
+      clearUserContext();
+      addBreadcrumb('auth: sign-out', 'auth');
+      userRef.current = null;
       setUser(null);
     } catch (error) {
       logger.error('Sign out error');
@@ -404,38 +435,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function updateUserRole(role: string) {
-    if (user) {
-      const updatedUser = { ...user, role };
-      setUser(updatedUser);
-      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-      // Also save to persistent profile storage by email
-      if (updatedUser.email) {
-        await AsyncStorage.setItem(`userProfile_${updatedUser.email}`, JSON.stringify(updatedUser));
-      }
+    const current = userRef.current ?? user;
+    if (current) {
+      await persistSession({ ...current, role });
     }
   }
 
   async function completeOnboarding() {
-    if (user) {
-      const updatedUser = { ...user, onboardingComplete: true };
-      setUser(updatedUser);
-      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-      // Also save to persistent profile storage by email
-      if (updatedUser.email) {
-        await AsyncStorage.setItem(`userProfile_${updatedUser.email}`, JSON.stringify(updatedUser));
-      }
+    const current = userRef.current ?? user;
+    if (current) {
+      await persistSession({ ...current, onboardingComplete: true });
     }
   }
 
   async function updateUserProfile(updates: Partial<User>) {
-    if (user) {
-      const updatedUser = { ...user, ...updates };
-      setUser(updatedUser);
-      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-      // Also save to persistent profile storage by email (survives logout)
-      if (updatedUser.email) {
-        await AsyncStorage.setItem(`userProfile_${updatedUser.email}`, JSON.stringify(updatedUser));
-      }
+    const current = userRef.current ?? user;
+    if (current) {
+      await persistSession({ ...current, ...updates });
     }
   }
 
@@ -451,12 +467,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Clear all local data
-      const email = user?.email;
+      const email = userRef.current?.email ?? user?.email;
       if (email) {
+        await AsyncStorage.removeItem(profileKey(email));
+        // Legacy exact-case key cleanup (pre-normalization installs)
         await AsyncStorage.removeItem(`userProfile_${email}`);
       }
       await AsyncStorage.removeItem('user');
-      await AsyncStorage.removeItem('token');
+      await clearAuthToken();
+      clearUserContext();
 
       // Sign out from Google if available
       if (GoogleSignin) {
@@ -467,6 +486,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      userRef.current = null;
       setUser(null);
     } catch (error) {
       logger.error('Delete account error');
@@ -523,9 +543,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ],
       };
 
-      setUser(demoUser);
-      await AsyncStorage.setItem('user', JSON.stringify(demoUser));
-      await AsyncStorage.setItem(`userProfile_${demoUser.email}`, JSON.stringify(demoUser));
+      addBreadcrumb('auth: demo sign-in', 'auth');
+      await persistSession(demoUser);
       logger.log('Demo account signed in');
     } catch (error) {
       logger.error('Demo sign in error');
@@ -540,6 +559,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isLoading,
+        isRestoring,
         signInWithGoogle,
         signInWithApple,
         isAppleAuthAvailable,

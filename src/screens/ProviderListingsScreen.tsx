@@ -17,8 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
-import { apiRequest } from '../lib/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { apiRequest, encodePath } from '../lib/api';
 import logger from '../lib/logger';
 
 interface Service {
@@ -81,11 +80,9 @@ export default function ProviderListingsScreen() {
 
   const loadListings = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
+      // Auth header is attached by apiRequest from the secure token store.
       const endpoint = isSupplier ? '/products/my-products' : '/services/my-services';
-      const data = await apiRequest(endpoint, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const data = await apiRequest(endpoint);
       setListings(isSupplier ? (data.products || []) : (data.services || []));
     } catch (error) {
       logger.error('Failed to load listings:', error);
@@ -159,10 +156,9 @@ export default function ProviderListingsScreen() {
 
     setSaving(true);
     try {
-      const token = await AsyncStorage.getItem('token');
       const endpoint = isSupplier ? '/products' : '/services';
       const method = editingItem ? 'PUT' : 'POST';
-      const url = editingItem ? `${endpoint}/${editingItem.id}` : endpoint;
+      const url = editingItem ? `${endpoint}/${encodePath(editingItem.id)}` : endpoint;
 
       const payload = isSupplier
         ? {
@@ -184,7 +180,6 @@ export default function ProviderListingsScreen() {
 
       await apiRequest(url, {
         method,
-        headers: { Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
 
@@ -228,11 +223,9 @@ export default function ProviderListingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const token = await AsyncStorage.getItem('token');
               const endpoint = isSupplier ? '/products' : '/services';
-              await apiRequest(`${endpoint}/${item.id}`, {
+              await apiRequest(`${endpoint}/${encodePath(item.id)}`, {
                 method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
               });
               loadListings();
             } catch (error) {

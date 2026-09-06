@@ -1,8 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import ENV from '../config/env';
 import logger from './logger';
+import { apiRequest } from './api';
 
-const API_URL = ENV.API_URL;
+// Aadhaar calls go through the shared apiRequest stack (auth header, timeout,
+// error normalization, 401 handling) — no divergent local implementation.
+// 30s timeout: Digio OTP delivery can be slow on the backend leg.
 
 // Aadhaar verification response types
 interface AadhaarOtpResponse {
@@ -30,48 +31,7 @@ interface AadhaarVerifyResponse {
 // Store transaction ID for OTP verification
 let currentTransactionId: string | null = null;
 
-async function getAuthHeader(): Promise<Record<string, string>> {
-  const token = await AsyncStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const url = `${API_URL}${endpoint}`;
-  const authHeader = await getAuthHeader();
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeader,
-        ...options.headers,
-      },
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || error.message || 'Request failed');
-    }
-
-    return response.json();
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Request timed out. Please check your internet connection.');
-    }
-    throw error;
-  }
-}
+const AADHAAR_TIMEOUT = 30000;
 
 export const aadhaarApi = {
   /**
@@ -104,7 +64,7 @@ export const aadhaarApi = {
       const response = await apiRequest<AadhaarOtpResponse>('/aadhaar/request-otp', {
         method: 'POST',
         body: JSON.stringify({ aadhaarNumber: cleanAadhaar }),
-      });
+      }, AADHAAR_TIMEOUT);
 
       if (response.success && response.transactionId) {
         currentTransactionId = response.transactionId;
@@ -153,7 +113,7 @@ export const aadhaarApi = {
           otp,
           transactionId: txnId,
         }),
-      });
+      }, AADHAAR_TIMEOUT);
 
       // Clear transaction ID after verification attempt
       if (response.verified) {
@@ -188,7 +148,7 @@ export const aadhaarApi = {
     try {
       const response = await apiRequest<{ verified: boolean; verifiedAt?: string }>('/aadhaar/status', {
         method: 'GET',
-      });
+      }, AADHAAR_TIMEOUT);
       return response;
     } catch (error) {
       logger.error('Failed to get Aadhaar verification status');
