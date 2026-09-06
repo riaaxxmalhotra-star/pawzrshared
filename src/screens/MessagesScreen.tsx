@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { messagesApi, likesApi } from '../lib/api';
+import { createOrGetChatThread } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
 import logger from '../lib/logger';
 import ChatInterface from '../components/chat/ChatInterface';
@@ -50,6 +51,7 @@ export default function MessagesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [initialized, setInitialized] = useState(false);
+  const [resolvingThread, setResolvingThread] = useState(false);
   const paramsProcessedRef = useRef<string | null>(null);
 
   // Role-based configuration
@@ -98,33 +100,45 @@ export default function MessagesScreen() {
 
   const roleConfig = getRoleConfig();
 
+  // Resolve the Firestore thread for a 1:1 chat. Thread IDs are deterministic
+  // per pair (see buildThreadId), so the match screen, the conversation list,
+  // and the other participant's device ALL converge on the same document —
+  // REST conversation IDs are never used as Firestore document IDs.
+  const resolveThread = useCallback(async (
+    recipientId: string,
+    recipientName: string,
+    recipientPhoto: string,
+    petId?: string,
+    petName?: string
+  ): Promise<string | null> => {
+    if (!user?.id || !recipientId) return null;
+    try {
+      return await createOrGetChatThread(
+        user.id,
+        user.name || 'User',
+        user.image || '',
+        recipientId,
+        recipientName,
+        recipientPhoto,
+        petId,
+        petName
+      );
+    } catch (error) {
+      logger.error('Failed to resolve chat thread:', error);
+      return null;
+    }
+  }, [user?.id, user?.name, user?.image]);
+
   // Process chat params - called when navigating with matchedUser
   const processMatchedUserParams = useCallback((params: any) => {
-    const { conversationId, matchedUser, petName, petId } = params;
+    const { matchedUser, petName, petId } = params;
 
-    if (!matchedUser) return false;
+    if (!matchedUser || !user?.id) return false;
 
     logger.log('Opening chat with matched user:', matchedUser.name);
+    setResolvingThread(true);
 
-    // Create conversation object immediately
-    const newConversation: Conversation = {
-      id: conversationId || `new-${matchedUser.id}`,
-      name: matchedUser.name || 'New Match',
-      lastMessage: '',
-      time: 'Just now',
-      unread: 0,
-      avatar: getAvatarEmoji(matchedUser.type || 'lover'),
-      online: matchedUser.online ?? true,
-      recipientId: matchedUser.id,
-      petName,
-      petId,
-    };
-
-    // Set conversation state - this will render ChatInterface
-    setSelectedConversation(newConversation);
-    setInitialized(true);
-
-    // Clear params AFTER setting state to prevent re-processing
+    // Clear params immediately to prevent re-processing
     setTimeout(() => {
       navigation.setParams({
         conversationId: undefined,
@@ -134,13 +148,64 @@ export default function MessagesScreen() {
       });
     }, 0);
 
-    // Create real conversation in background if needed
-    if (!conversationId || conversationId.startsWith('new-')) {
-      createConversationInBackground(matchedUser.id, newConversation);
-    }
+    resolveThread(
+      matchedUser.id,
+      matchedUser.name || 'New Match',
+      matchedUser.photo || getAvatarEmoji(matchedUser.type || 'lover'),
+      petId,
+      petName
+    ).then((threadId) => {
+      if (!threadId) {
+        setResolvingThread(false);
+        return;
+      }
+      setSelectedConversation({
+        id: threadId,
+        name: matchedUser.name || 'New Match',
+        lastMessage: '',
+        time: 'Just now',
+        unread: 0,
+        avatar: getAvatarEmoji(matchedUser.type || 'lover'),
+        online: matchedUser.online ?? true,
+        recipientId: matchedUser.id,
+        petName,
+        petId,
+      });
+      setInitialized(true);
+      setResolvingThread(false);
+      // Tell the backend about the conversation (bookkeeping only — the
+      // Firestore thread above is the source of truth for messages).
+      notifyBackendConversation(matchedUser.id);
+    });
 
     return true;
-  }, [navigation]);
+  }, [navigation, resolveThread, user?.id]);
+
+  // Open a conversation from the list — always through thread resolution so a
+  // REST id from the backend list can never become a Firestore document path.
+  const openConversation = useCallback((conversation: Conversation) => {
+    if (!conversation.recipientId) {
+      // No peer to resolve against — open as-is; ChatInterface degrades
+      // honestly when the document does not exist.
+      setSelectedConversation(conversation);
+      return;
+    }
+    if (conversation.id.startsWith('thread_') || conversation.id.startsWith('mock-thread_')) {
+      setSelectedConversation(conversation);
+      return;
+    }
+    setResolvingThread(true);
+    resolveThread(
+      conversation.recipientId,
+      conversation.name,
+      conversation.avatar,
+      conversation.petId,
+      conversation.petName
+    ).then((threadId) => {
+      setSelectedConversation(threadId ? { ...conversation, id: threadId } : conversation);
+      setResolvingThread(false);
+    });
+  }, [resolveThread]);
 
   // Watch for route params changes - this handles navigation with params
   useEffect(() => {
@@ -159,19 +224,12 @@ export default function MessagesScreen() {
     }
   }, [initialized, selectedConversation]);
 
-  // Create conversation in background (don't block UI)
-  const createConversationInBackground = async (userId: string, currentConv: Conversation) => {
+  // Tell the backend about a new conversation (fire-and-forget bookkeeping).
+  const notifyBackendConversation = async (userId: string) => {
     try {
-      logger.log('Creating conversation in background');
-      const response = await likesApi.createConversation(userId);
-      const newId = response.conversationId || response.conversation?.id || response.id;
-
-      if (newId && newId !== currentConv.id) {
-        logger.log('Got real conversation ID');
-        setSelectedConversation(prev => prev ? { ...prev, id: newId } : null);
-      }
+      await likesApi.createConversation(userId);
     } catch (error) {
-      logger.log('Background conversation creation failed (using temp)');
+      logger.log('Backend conversation notify failed (chat itself is unaffected)');
     }
   };
 
@@ -247,7 +305,7 @@ export default function MessagesScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <ChatInterface
           chatId={selectedConversation.id}
-          recipientId={selectedConversation.recipientId || selectedConversation.id.replace('new-', '')}
+          recipientId={selectedConversation.recipientId || ''}
           recipientName={selectedConversation.name}
           recipientPhoto={selectedConversation.avatar}
           petName={selectedConversation.petName}
@@ -259,12 +317,14 @@ export default function MessagesScreen() {
   }
 
   // ============ LOADING STATE ============
-  if (loading) {
+  if (loading || resolvingThread) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading conversations...</Text>
+          <Text style={styles.loadingText}>
+            {resolvingThread ? 'Opening conversation...' : 'Loading conversations...'}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -318,7 +378,7 @@ export default function MessagesScreen() {
             <TouchableOpacity
               key={conversation.id}
               style={styles.conversationCard}
-              onPress={() => setSelectedConversation(conversation)}
+              onPress={() => openConversation(conversation)}
             >
               <View style={styles.avatarContainer}>
                 <Text style={styles.avatarEmoji}>{conversation.avatar}</Text>

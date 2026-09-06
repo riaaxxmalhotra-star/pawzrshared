@@ -22,6 +22,7 @@ import {
   setTypingIndicator,
   markMessagesAsRead,
   updateBookingStatus,
+  isFirebaseConfigured,
 } from '../../lib/firebase';
 import ScheduleWalkModal, { WalkScheduleData } from './ScheduleWalkModal';
 import ScheduleHostingModal, { HostingScheduleData } from './ScheduleHostingModal';
@@ -52,30 +53,42 @@ export default function ChatInterface({
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [showWalkModal, setShowWalkModal] = useState(false);
   const [showHostingModal, setShowHostingModal] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingActiveRef = useRef(false);
+  const chatUnavailable = !isFirebaseConfigured;
 
   // Subscribe to messages
   useEffect(() => {
     if (!chatId) return;
+    setLoading(true);
+    setChatError(null);
+
+    const onSubscriptionError = () => {
+      setChatError('Could not load messages. Check your connection and reopen the chat.');
+      setLoading(false);
+    };
 
     const unsubscribeMessages = subscribeToMessages(chatId, (msgs) => {
       setMessages(msgs);
       setLoading(false);
       setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-    });
+      // Mark newly arrived messages from the other side as read, not just
+      // the ones present on mount.
+      if (user?.id && msgs.some(m => m.senderId !== user.id && !m.read)) {
+        markMessagesAsRead(chatId, user.id).catch(() => {});
+      }
+    }, onSubscriptionError);
 
     const unsubscribeThread = subscribeToChatThread(chatId, (t) => {
       setThread(t);
-    });
-
-    // Mark messages as read
-    if (user?.id) {
-      markMessagesAsRead(chatId, user.id);
-    }
+    }, onSubscriptionError);
 
     return () => {
       unsubscribeMessages();
@@ -83,44 +96,70 @@ export default function ChatInterface({
     };
   }, [chatId, user?.id]);
 
-  // Handle typing indicator
+  // Clear our typing flag when the chat closes or switches.
+  useEffect(() => {
+    const myId = user?.id;
+    const activeChat = chatId;
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      if (typingActiveRef.current && myId && activeChat) {
+        typingActiveRef.current = false;
+        setTypingIndicator(activeChat, myId, false).catch(() => {});
+      }
+    };
+  }, [chatId, user?.id]);
+
+  // Handle typing indicator — debounced: a single `true` write per burst,
+  // `false` 800ms after the last keystroke (previously: a write per keystroke).
   const handleTyping = useCallback((text: string) => {
     setMessageText(text);
 
-    if (!chatId || !user?.id) return;
+    if (!chatId || !user?.id || chatUnavailable) return;
 
-    // Clear previous timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
     }
 
-    // Set typing indicator
     if (text.length > 0) {
-      setTypingIndicator(chatId, user.id, true);
-
-      // Clear typing after 2 seconds of no input
+      if (!typingActiveRef.current) {
+        typingActiveRef.current = true;
+        setTypingIndicator(chatId, user.id, true).catch(() => {
+          typingActiveRef.current = false;
+        });
+      }
       typingTimeoutRef.current = setTimeout(() => {
-        setTypingIndicator(chatId, user.id, false);
-      }, 2000);
-    } else {
-      setTypingIndicator(chatId, user.id, false);
+        typingActiveRef.current = false;
+        setTypingIndicator(chatId, user!.id, false).catch(() => {});
+      }, 800);
+    } else if (typingActiveRef.current) {
+      typingActiveRef.current = false;
+      setTypingIndicator(chatId, user.id, false).catch(() => {});
     }
-  }, [chatId, user?.id]);
+  }, [chatId, user?.id, chatUnavailable]);
 
-  // Send text message
+  // Send text message — the draft is only cleared after the write is
+  // acknowledged, and failures surface inline instead of vanishing.
   const handleSendMessage = async () => {
     if (!messageText.trim() || !user || sending) return;
 
     const text = messageText.trim();
-    setMessageText('');
     setSending(true);
+    setSendFailed(false);
 
     try {
       await sendChatMessage(chatId, user.id, user.name || 'User', text, 'text');
-      setTypingIndicator(chatId, user.id, false);
+      setMessageText('');
+      if (typingActiveRef.current) {
+        typingActiveRef.current = false;
+        setTypingIndicator(chatId, user.id, false).catch(() => {});
+      }
     } catch (error) {
       logger.error('Failed to send message:', error);
-      setMessageText(text);
+      setSendFailed(true);
     } finally {
       setSending(false);
     }
@@ -178,11 +217,13 @@ export default function ChatInterface({
     }
   };
 
-  // Handle booking response
+  // Handle booking response — single-flight per message so double taps
+  // cannot send duplicate confirms/declines.
   const handleBookingResponse = async (message: ChatMessage, accept: boolean) => {
-    if (!user || !message.bookingData) return;
+    if (!user || !message.bookingData || respondingId) return;
 
     const newStatus = accept ? 'confirmed' : 'declined';
+    setRespondingId(message.id);
 
     try {
       await updateBookingStatus(chatId, message.id, newStatus);
@@ -200,6 +241,8 @@ export default function ChatInterface({
       );
     } catch (error) {
       logger.error('Failed to update booking:', error);
+    } finally {
+      setRespondingId(null);
     }
   };
 
@@ -273,16 +316,24 @@ export default function ChatInterface({
           {showBookingActions && (
             <View style={styles.bookingActions}>
               <TouchableOpacity
-                style={styles.declineBtn}
+                style={[styles.declineBtn, respondingId === message.id && styles.actionBtnDisabled]}
                 onPress={() => handleBookingResponse(message, false)}
+                disabled={respondingId === message.id}
               >
-                <Text style={styles.declineBtnText}>Decline</Text>
+                <Text style={styles.declineBtnText}>
+                  {respondingId === message.id ? 'Working...' : 'Decline'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.acceptBtn}
+                style={[styles.acceptBtn, respondingId === message.id && styles.actionBtnDisabled]}
                 onPress={() => handleBookingResponse(message, true)}
+                disabled={respondingId === message.id}
               >
-                <Ionicons name="checkmark" size={18} color={colors.white} />
+                {respondingId === message.id ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Ionicons name="checkmark" size={18} color={colors.white} />
+                )}
                 <Text style={styles.acceptBtnText}>Accept</Text>
               </TouchableOpacity>
             </View>
@@ -321,6 +372,16 @@ export default function ChatInterface({
       </View>
 
       {/* Messages */}
+      {(chatUnavailable || chatError) && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="cloud-offline-outline" size={18} color="#B45309" />
+          <Text style={styles.errorBannerText}>
+            {chatUnavailable
+              ? 'Chat is unavailable right now. Your messages will send once it is configured.'
+              : chatError}
+          </Text>
+        </View>
+      )}
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesContainer}
@@ -376,6 +437,12 @@ export default function ChatInterface({
       </View>
 
       {/* Input */}
+      {sendFailed && (
+        <View style={styles.sendFailedRow}>
+          <Ionicons name="alert-circle-outline" size={16} color="#DC2626" />
+          <Text style={styles.sendFailedText}>Message not sent. Check your connection and try again.</Text>
+        </View>
+      )}
       <View style={styles.inputContainer}>
         <TouchableOpacity style={styles.attachBtn}>
           <Ionicons name="add-circle" size={28} color={colors.primary} />
@@ -489,6 +556,38 @@ const styles = StyleSheet.create({
   messagesContent: {
     padding: 16,
     paddingBottom: 8,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 18,
+  },
+  sendFailedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    backgroundColor: colors.white,
+    gap: 6,
+  },
+  sendFailedText: {
+    fontSize: 12,
+    color: '#DC2626',
+  },
+  actionBtnDisabled: {
+    opacity: 0.6,
   },
   loadingContainer: {
     flex: 1,
