@@ -28,7 +28,7 @@ interface Service {
 
 export default function GroomerOnboardingScreen() {
   const navigation = useNavigation<any>();
-  const { completeOnboarding } = useAuth();
+  const { updateUserProfile, completeOnboarding, signOut } = useAuth();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -109,19 +109,97 @@ export default function GroomerOnboardingScreen() {
     }
   };
 
+  const collectProfile = () => ({
+    name: ownerName.trim() || undefined,
+    phone: phone.trim(),
+    businessName: businessName.trim(),
+    bio: description.trim(),
+    googleMapsLink: googleMapsLink.trim(),
+    image: photos[0] || undefined,
+    photos,
+    addressLine1: address.trim(),
+    services: services.map(s => s.name.trim()).filter(Boolean),
+    serviceRates: services
+      .filter(s => s.name.trim())
+      .map(s => ({ name: s.name.trim(), price: s.price.trim(), duration: s.duration.trim() })),
+    workingDays,
+    openTime,
+    closeTime,
+  });
+
+  const validateStep = (currentStep: number): string | null => {
+    if (currentStep === 1) {
+      if (!businessName.trim()) return 'Please enter your business name.';
+      if (!ownerName.trim()) return 'Please enter the owner name.';
+      if (!phone.trim()) return 'Please enter a contact phone number.';
+      if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) {
+        return 'Please enter a valid email address.';
+      }
+    }
+    if (currentStep === 3) {
+      for (let i = 0; i < services.length; i++) {
+        if (!services[i].name.trim()) return `Please name service ${i + 1} or remove it.`;
+        if (!services[i].price.trim() || Number.isNaN(Number(services[i].price))) {
+          return `Please enter a valid price for "${services[i].name.trim()}".`;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Drafts persist across Back/Next AND cold restarts (profile storage
+  // survives logout), so killing the app mid-onboarding loses nothing.
+  const saveDraft = async () => {
+    try {
+      await updateUserProfile(collectProfile());
+    } catch {
+      // best-effort: drafts must never block navigation
+    }
+  };
+
+  const handleNext = async () => {
+    const error = validateStep(step);
+    if (error) {
+      Alert.alert('Missing details', error);
+      return;
+    }
+    await saveDraft();
+    setStep(step + 1);
+  };
+
+  const handleBack = async () => {
+    await saveDraft();
+    setStep(step - 1);
+  };
+
+  const resetToMain = () => {
+    // Main lives in the parent RootStack, not this nested Onboarding stack —
+    // resetting the child navigator would throw/no-op.
+    const parent = navigation.getParent();
+    const target = { index: 0, routes: [{ name: 'Main' }] } as const;
+    if (parent) parent.reset(target);
+    else navigation.reset(target);
+  };
+
   const handleComplete = async () => {
     setIsLoading(true);
     try {
+      await updateUserProfile({ ...collectProfile(), onboardingComplete: true });
       await completeOnboarding();
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
+      resetToMain();
     } catch (error) {
-      logger.error('Error saving profile:', error);
+      logger.error('Error saving groomer profile:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Sign out?', 'Your progress is saved as a draft. You can continue later.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
   };
 
   const renderStep1 = () => (
@@ -394,9 +472,18 @@ export default function GroomerOnboardingScreen() {
         <Text style={styles.verifyButtonText}>Verify with Aadhaar</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.skipButton} onPress={handleComplete}>
-        <Text style={styles.skipButtonText}>Skip for now</Text>
+      <TouchableOpacity style={styles.skipButton} onPress={handleComplete} disabled={isLoading}>
+        <Text style={styles.skipButtonText}>{isLoading ? 'Saving…' : 'Skip for now'}</Text>
       </TouchableOpacity>
+
+      <View style={styles.step4Footer}>
+        <TouchableOpacity onPress={handleBack}>
+          <Text style={styles.linkButtonText}>← Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleSignOut}>
+          <Text style={styles.linkButtonText}>Not you? Sign out</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -428,14 +515,14 @@ export default function GroomerOnboardingScreen() {
             {step > 1 && (
               <TouchableOpacity
                 style={styles.backButton}
-                onPress={() => setStep(step - 1)}
+                onPress={handleBack}
               >
                 <Text style={styles.backButtonText}>Back</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
               style={[styles.nextButton, { backgroundColor: '#8B5CF6' }, step === 1 && { flex: 1 }]}
-              onPress={() => setStep(step + 1)}
+              onPress={handleNext}
             >
               <Text style={styles.nextButtonText}>Next</Text>
             </TouchableOpacity>
@@ -676,6 +763,17 @@ const styles = StyleSheet.create({
   skipButtonText: {
     fontSize: 15,
     color: colors.gray[500],
+  },
+  step4Footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 24,
+  },
+  linkButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8B5CF6',
   },
   footer: {
     flexDirection: 'row',

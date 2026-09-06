@@ -1,21 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDigioClient } from '../../../../lib/digio';
-
-// In-memory store for transactions (use Redis/DB in production)
-export const transactionStore = new Map<string, { aadhaarNumber: string; transactionId: string; createdAt: Date }>();
-
-// Clean up old transactions (older than 10 minutes)
-function cleanupOldTransactions() {
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-  for (const [key, value] of transactionStore.entries()) {
-    if (value.createdAt < tenMinutesAgo) {
-      transactionStore.delete(key);
-    }
-  }
-}
+import {
+  getIdentityFromRequest,
+  checkRateLimit,
+  saveTransaction,
+  hashAadhaar,
+} from '../_store';
 
 export async function POST(request: NextRequest) {
   try {
+    // Anonymous callers must not be able to burn the Digio OTP quota.
+    const identity = getIdentityFromRequest(request);
+    if (!identity) {
+      return NextResponse.json(
+        { success: false, message: 'Authentication required', error: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+
+    if (!checkRateLimit(identity)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Too many OTP requests. Please wait a few minutes and try again.',
+          error: 'RATE_LIMITED',
+        },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const { aadhaarNumber } = body;
 
@@ -45,19 +58,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Clean up old transactions
-    cleanupOldTransactions();
-
     // Call Digio API
     const digio = getDigioClient();
     const result = await digio.requestOtp(cleanAadhaar);
 
     if (result.success && result.transactionId) {
-      // Store transaction for verification
-      transactionStore.set(result.transactionId, {
-        aadhaarNumber: cleanAadhaar,
+      // Store the transaction bound to this caller. The full Aadhaar number
+      // is never persisted — only its hash, for request binding.
+      saveTransaction({
+        hashedAadhaar: hashAadhaar(cleanAadhaar),
         transactionId: result.transactionId,
-        createdAt: new Date(),
+        identity,
       });
 
       return NextResponse.json({

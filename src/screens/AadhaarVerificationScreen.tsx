@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { aadhaarApi } from '../lib/aadhaarApi';
+import { useAuth } from '../lib/auth';
 import logger from '../lib/logger';
 
 type VerificationStep = 'enter_aadhaar' | 'verify_otp' | 'success' | 'already_verified';
@@ -31,6 +32,7 @@ export default function AadhaarVerificationScreen({
   onVerificationComplete
 }: AadhaarVerificationScreenProps) {
   const navigation = useNavigation();
+  const { updateUserProfile } = useAuth();
   const [step, setStep] = useState<VerificationStep>(isVerified ? 'already_verified' : 'enter_aadhaar');
   const [aadhaarNumber, setAadhaarNumber] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -165,6 +167,13 @@ export default function AadhaarVerificationScreen({
 
       if (response.success && response.verified) {
         setVerificationData(response.data);
+        // Persist so Profile/role gates survive restarts — verification used
+        // to be lost on every reload.
+        try {
+          await updateUserProfile({ aadhaarVerified: true });
+        } catch {
+          // best-effort: the success screen still shows
+        }
         setStep('success');
         logger.log('Aadhaar verification successful');
 

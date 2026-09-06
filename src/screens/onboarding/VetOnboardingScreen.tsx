@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
 import { colors } from '../../theme/colors';
+import logger from '../../lib/logger';
 
 interface Service {
   name: string;
@@ -27,7 +28,7 @@ interface Service {
 
 export default function VetOnboardingScreen() {
   const navigation = useNavigation<any>();
-  const { completeOnboarding } = useAuth();
+  const { updateUserProfile, completeOnboarding, signOut } = useAuth();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -115,14 +116,97 @@ export default function VetOnboardingScreen() {
     setServices(updated);
   };
 
+  const collectProfile = () => ({
+    name: doctorName.trim() || undefined,
+    phone: phone.trim(),
+    businessName: clinicName.trim(),
+    bio: description.trim(),
+    googleMapsLink: googleMapsLink.trim(),
+    image: photos[0] || undefined,
+    photos,
+    addressLine1: address.trim(),
+    services: specializations,
+    qualification: qualification.trim(),
+    registrationNo: registrationNo.trim(),
+    specializations,
+    workingDays,
+    openTime,
+    closeTime,
+  });
+
+  const validateStep = (currentStep: number): string | null => {
+    if (currentStep === 1) {
+      if (!clinicName.trim()) return 'Please enter your clinic name.';
+      if (!doctorName.trim()) return 'Please enter the doctor name.';
+      if (!phone.trim()) return 'Please enter a contact phone number.';
+      if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) {
+        return 'Please enter a valid email address.';
+      }
+    }
+    if (currentStep === 3) {
+      for (let i = 0; i < services.length; i++) {
+        if (!services[i].name.trim()) return `Please name service ${i + 1} or remove it.`;
+        if (!services[i].price.trim() || Number.isNaN(Number(services[i].price))) {
+          return `Please enter a valid price for "${services[i].name.trim()}".`;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Drafts persist across Back/Next AND cold restarts (profile storage
+  // survives logout), so killing the app mid-onboarding loses nothing.
+  const saveDraft = async () => {
+    try {
+      await updateUserProfile(collectProfile());
+    } catch {
+      // best-effort: drafts must never block navigation
+    }
+  };
+
+  const handleNext = async () => {
+    const error = validateStep(step);
+    if (error) {
+      Alert.alert('Missing details', error);
+      return;
+    }
+    await saveDraft();
+    setStep(step + 1);
+  };
+
+  const handleBack = async () => {
+    await saveDraft();
+    setStep(step - 1);
+  };
+
+  const resetToMain = () => {
+    // Main lives in the parent RootStack, not this nested Onboarding stack —
+    // resetting the child navigator would throw/no-op.
+    const parent = navigation.getParent();
+    const target = { index: 0, routes: [{ name: 'Main' }] } as const;
+    if (parent) parent.reset(target);
+    else navigation.reset(target);
+  };
+
   const handleComplete = async () => {
     setIsLoading(true);
     try {
+      await updateUserProfile({ ...collectProfile(), onboardingComplete: true });
       await completeOnboarding();
-      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
+      resetToMain();
+    } catch (error) {
+      logger.error('Error saving vet profile:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Sign out?', 'Your progress is saved as a draft. You can continue later.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
   };
 
   const renderStep1 = () => (
@@ -283,9 +367,18 @@ export default function VetOnboardingScreen() {
         <Text style={styles.verifyButtonText}>Verify with Aadhaar</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.skipButton} onPress={handleComplete}>
-        <Text style={styles.skipButtonText}>Skip for now</Text>
+      <TouchableOpacity style={styles.skipButton} onPress={handleComplete} disabled={isLoading}>
+        <Text style={styles.skipButtonText}>{isLoading ? 'Saving…' : 'Skip for now'}</Text>
       </TouchableOpacity>
+
+      <View style={styles.step4Footer}>
+        <TouchableOpacity onPress={handleBack}>
+          <Text style={styles.linkButtonText}>← Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleSignOut}>
+          <Text style={styles.linkButtonText}>Not you? Sign out</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -312,11 +405,11 @@ export default function VetOnboardingScreen() {
         {step < 4 && (
           <View style={styles.footer}>
             {step > 1 && (
-              <TouchableOpacity style={styles.backButton} onPress={() => setStep(step - 1)}>
+              <TouchableOpacity style={styles.backButton} onPress={handleBack}>
                 <Text style={styles.backButtonText}>Back</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={[styles.nextButton, { backgroundColor: '#10B981' }, step === 1 && { flex: 1 }]} onPress={() => setStep(step + 1)}>
+            <TouchableOpacity style={[styles.nextButton, { backgroundColor: '#10B981' }, step === 1 && { flex: 1 }]} onPress={handleNext}>
               <Text style={styles.nextButtonText}>Next</Text>
             </TouchableOpacity>
           </View>
@@ -370,6 +463,8 @@ const styles = StyleSheet.create({
   verifyButtonText: { color: colors.white, fontSize: 16, fontWeight: '600' },
   skipButton: { marginTop: 16, paddingVertical: 12 },
   skipButtonText: { fontSize: 15, color: colors.gray[500] },
+  step4Footer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginTop: 24 },
+  linkButtonText: { fontSize: 14, fontWeight: '600', color: '#10B981' },
   footer: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 16, gap: 12, borderTopWidth: 1, borderTopColor: colors.gray[100] },
   backButton: { flex: 1, paddingVertical: 16, borderRadius: 12, alignItems: 'center', backgroundColor: colors.gray[100] },
   backButtonText: { fontSize: 16, fontWeight: '600', color: colors.gray[700] },

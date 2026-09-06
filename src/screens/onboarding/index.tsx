@@ -7,11 +7,15 @@ import VetOnboardingScreen from './VetOnboardingScreen';
 import SupplierOnboardingScreen from './SupplierOnboardingScreen';
 import CafeOnboardingScreen from './CafeOnboardingScreen';
 import AadhaarVerificationScreen from '../AadhaarVerificationScreen';
+import { useAuth } from '../../lib/auth';
 
 const Stack = createNativeStackNavigator();
 
 export default function OnboardingNavigator({ route }: { route: any }) {
-  const role = route?.params?.role || 'OWNER';
+  // Cold restarts land here without params — seed from the saved role instead
+  // of silently defaulting every returning user to the OWNER form.
+  const { user } = useAuth();
+  const role = route?.params?.role || user?.role || 'OWNER';
 
   const getScreen = () => {
     switch (role) {

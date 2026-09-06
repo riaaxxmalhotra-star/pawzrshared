@@ -86,8 +86,9 @@ const roles = [
 
 export default function RoleSelectionScreen() {
   const navigation = useNavigation<any>();
-  const { updateUserRole } = useAuth();
-  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const { user, updateUserRole } = useAuth();
+  // Pre-select the saved role so returning users see their choice, not a blank form.
+  const [selectedRole, setSelectedRole] = useState<string | null>(user?.role ?? null);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {

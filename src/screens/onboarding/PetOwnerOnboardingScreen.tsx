@@ -184,11 +184,17 @@ export default function PetOwnerOnboardingScreen() {
         onboardingComplete: true,
       });
 
-      // Navigate to main app
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
+      // Navigate to main app (Main lives in the parent RootStack, not this
+      // nested Onboarding stack — resetting the child navigator would throw).
+      const parent = navigation.getParent();
+      if (parent) {
+        parent.reset({ index: 0, routes: [{ name: 'Main' }] });
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Main' }],
+        });
+      }
     } catch (error) {
       logger.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');

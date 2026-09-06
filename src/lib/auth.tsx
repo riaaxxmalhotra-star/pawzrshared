@@ -71,6 +71,11 @@ interface User {
   products?: any[];
   orders?: any[];
   inventory?: any[];
+  // Vet / groomer professional fields
+  qualification?: string;
+  registrationNo?: string;
+  specializations?: string[];
+  serviceRates?: { name: string; price: string; duration: string }[];
   // Cafe/Events fields
   ownerName?: string;
   petAmenities?: string[];

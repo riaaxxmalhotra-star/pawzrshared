@@ -180,10 +180,16 @@ export default function PetLoverOnboardingScreen() {
         practicalAnswers: practicalAnswers,
         onboardingComplete: true,
       });
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
+      // Main lives in the parent RootStack, not this nested Onboarding stack.
+      const parent = navigation.getParent();
+      if (parent) {
+        parent.reset({ index: 0, routes: [{ name: 'Main' }] });
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Main' }],
+        });
+      }
     } catch (error) {
       logger.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');

@@ -1,21 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getIdentityFromRequest, getVerification } from '../_store';
 
-// In production, this would query the user's verification status from database
-
+// Returns the caller's own verification state — no longer a hardcoded stub.
 export async function GET(request: NextRequest) {
   try {
-    // TODO: Get user ID from auth token and check database
-    // const userId = getUserIdFromToken(request);
-    // const user = await db.users.findById(userId);
-    // return NextResponse.json({
-    //   verified: user?.aadhaarVerified || false,
-    //   verifiedAt: user?.aadhaarVerifiedAt,
-    // });
+    const identity = getIdentityFromRequest(request);
+    if (!identity) {
+      return NextResponse.json(
+        { verified: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
 
-    // For now, return not verified (implement database check later)
+    const record = getVerification(identity);
+    if (!record) {
+      return NextResponse.json({ verified: false, verifiedAt: null });
+    }
+
     return NextResponse.json({
-      verified: false,
-      verifiedAt: null,
+      verified: true,
+      verifiedAt: new Date(record.verifiedAt).toISOString(),
     });
   } catch (error: any) {
     console.error('Aadhaar status check error:', error);

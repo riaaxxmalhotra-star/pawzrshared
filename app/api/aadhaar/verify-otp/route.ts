@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDigioClient } from '../../../../lib/digio';
-import { transactionStore } from '../request-otp/route';
-
-// Store verified users (in production, save to database)
-export const verifiedUsers = new Map<string, {
-  maskedAadhaar: string;
-  name: string;
-  verifiedAt: Date;
-}>();
+import {
+  getIdentityFromRequest,
+  getTransaction,
+  recordOtpAttempt,
+  consumeTransaction,
+  saveVerification,
+} from '../_store';
 
 export async function POST(request: NextRequest) {
   try {
+    const identity = getIdentityFromRequest(request);
+    if (!identity) {
+      return NextResponse.json(
+        { success: false, verified: false, message: 'Authentication required', error: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { otp, transactionId } = body;
 
@@ -37,30 +44,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if transaction exists
-    const transaction = transactionStore.get(transactionId);
-    if (!transaction) {
+    // Transaction must exist AND belong to this caller.
+    const lookup = getTransaction(transactionId, identity);
+    if (lookup.status !== 'ok') {
       return NextResponse.json(
         {
           success: false,
           verified: false,
-          message: 'Session expired. Please request a new OTP.',
-          error: 'TRANSACTION_EXPIRED',
+          message:
+            lookup.status === 'expired'
+              ? 'OTP expired. Please request a new OTP.'
+              : 'Session expired. Please request a new OTP.',
+          error: lookup.status === 'expired' ? 'OTP_EXPIRED' : 'TRANSACTION_EXPIRED',
         },
         { status: 400 }
       );
     }
 
-    // Check if transaction is too old (10 minutes)
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    if (transaction.createdAt < tenMinutesAgo) {
-      transactionStore.delete(transactionId);
+    // Bound the OTP guessing budget per transaction.
+    if (!recordOtpAttempt(transactionId)) {
       return NextResponse.json(
         {
           success: false,
           verified: false,
-          message: 'OTP expired. Please request a new OTP.',
-          error: 'OTP_EXPIRED',
+          message: 'Too many incorrect attempts. Please request a new OTP.',
+          error: 'ATTEMPTS_EXHAUSTED',
         },
         { status: 400 }
       );
@@ -71,17 +79,17 @@ export async function POST(request: NextRequest) {
     const result = await digio.verifyOtp(transactionId, otp);
 
     if (result.success && result.verified) {
-      // Clean up transaction
-      transactionStore.delete(transactionId);
+      // Single-use transaction: consume on success.
+      consumeTransaction(transactionId);
 
-      // Store verification (in production, save to user profile in database)
-      if (result.data?.maskedAadhaar) {
-        verifiedUsers.set(transaction.aadhaarNumber.slice(-4), {
-          maskedAadhaar: result.data.maskedAadhaar,
-          name: result.data.name || '',
-          verifiedAt: new Date(),
-        });
-      }
+      // Verification is recorded per caller identity (never keyed by Aadhaar
+      // last-4, which collides across users). Only the last 4 digits and the
+      // display name are kept — never the full number.
+      saveVerification({
+        identity,
+        maskedLast4: (result.data?.maskedAadhaar ?? '').slice(-4),
+        name: result.data?.name || '',
+      });
 
       return NextResponse.json({
         success: true,
