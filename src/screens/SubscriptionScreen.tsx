@@ -132,15 +132,12 @@ export default function SubscriptionScreen() {
 
     const plan = subscriptionPlans.find(p => p.id === planId);
     if (plan) {
+      // No checkout backend exists — never claim the user was charged or that
+      // benefits are active. Plans are a preview until payments land.
       Alert.alert(
-        'Upgrade to ' + plan.name,
-        `You'll be charged ₹${plan.price.toLocaleString()}${plan.period}. Commission will be reduced to ${plan.commission}.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Subscribe', onPress: () => {
-            Alert.alert('Success!', `Welcome to Pawzr ${plan.name}! Your benefits are now active.`);
-          }},
-        ]
+        'Subscriptions coming soon',
+        `${plan.name} (₹${plan.price.toLocaleString()}${plan.period}) is a preview. Checkout is not available yet, so no payment was taken and no plan was changed.`,
+        [{ text: 'OK' }]
       );
     }
   };
@@ -263,6 +260,10 @@ export default function SubscriptionScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         ))}
+
+        <Text style={styles.previewNote}>
+          Plans shown are a preview — checkout is not live yet, so tapping a plan changes nothing.
+        </Text>
 
         {/* Value Props */}
         <View style={styles.valueSection}>
@@ -539,6 +540,14 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
+  },
+  previewNote: {
+    fontSize: 13,
+    color: colors.gray[500],
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
   },
   subscribeButtonText: {
     fontSize: 15,

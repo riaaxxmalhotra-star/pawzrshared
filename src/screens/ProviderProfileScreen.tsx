@@ -42,36 +42,24 @@ export default function ProviderProfileScreen() {
   const { provider: routeProvider } = route.params || {};
 
   // Default provider data (mock) if not passed
-  const provider: ProviderData = routeProvider || {
-    id: '1',
-    name: 'Dr. Amit Sharma',
-    type: 'vet',
-    specialty: 'General Veterinarian',
-    rating: 4.9,
-    reviewCount: 127,
-    distance: '0.5 km',
-    address: '123 Pet Care Lane, Sector 15, Gurgaon, Haryana 122001',
-    phone: '+91 98765 43210',
-    email: 'dr.amit@pawzrvet.com',
-    googleMapsLink: 'https://maps.google.com/?q=28.4595,77.0266',
-    bio: 'Dr. Amit Sharma is a highly experienced veterinarian with over 15 years of practice. He specializes in small animal medicine and surgery, with a particular focus on preventive care and pet wellness.',
-    experience: '15+ years',
-    services: [
-      { name: 'General Checkup', price: '₹500', duration: '30 min' },
-      { name: 'Vaccination', price: '₹800', duration: '15 min' },
-      { name: 'Surgery Consultation', price: '₹1,000', duration: '45 min' },
-      { name: 'Dental Cleaning', price: '₹2,500', duration: '1 hour' },
-      { name: 'Emergency Care', price: '₹1,500', duration: 'Varies' },
-    ],
-    openHours: [
-      { day: 'Monday - Friday', hours: '9:00 AM - 7:00 PM' },
-      { day: 'Saturday', hours: '10:00 AM - 5:00 PM' },
-      { day: 'Sunday', hours: 'Closed' },
-    ],
-    photos: [],
-  };
+  const provider = routeProvider as ProviderData | undefined;
 
   const [activeTab, setActiveTab] = useState<'about' | 'services' | 'reviews'>('about');
+
+  if (!provider) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.notFound}>
+          <Ionicons name="person-outline" size={48} color={colors.gray[300]} />
+          <Text style={styles.notFoundTitle}>Provider not found</Text>
+          <Text style={styles.notFoundText}>This profile is no longer available.</Text>
+          <TouchableOpacity style={styles.notFoundButton} onPress={() => navigation.goBack()}>
+            <Text style={styles.notFoundButtonText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const getTypeConfig = (type: string) => {
     switch (type) {
@@ -102,10 +90,17 @@ export default function ProviderProfileScreen() {
   };
 
   const handleMessage = () => {
-    // Navigate to Messages tab and it will show the chat
-    // We use reset to ensure the Messages screen loads fresh
-    navigation.navigate('Messages');
-    // The user can start a new chat from there
+    // Open the 1:1 thread with this provider. MessagesScreen resolves the
+    // deterministic Firestore thread from matchedUser (Wave 3).
+    navigation.navigate('Chat', {
+      matchedUser: {
+        id: provider.id,
+        name: provider.name,
+        type: provider.type,
+        photo: provider.image,
+        verified: false,
+      },
+    });
   };
 
   const handleOpenMaps = () => {
@@ -407,6 +402,36 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  notFound: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  notFoundTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.gray[800],
+    marginTop: 16,
+  },
+  notFoundText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  notFoundButton: {
+    marginTop: 20,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  notFoundButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
   },
   header: {
     flexDirection: 'row',

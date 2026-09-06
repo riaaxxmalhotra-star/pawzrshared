@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,23 +11,29 @@ import {
   Alert,
   Modal,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors, roleColors, getRoleColor } from '../theme/colors';
+import { ordersApi, bookingsApi } from '../lib/api';
+import { createOrGetChatThread, sendChatMessage } from '../lib/firebase';
+import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
 
 interface Customer {
   id: string;
+  userId?: string;
   name: string;
   image?: string;
   phone: string; // Masked for privacy
   totalBookings: number;
   totalSpent: number;
   lastVisit: string;
+  lastVisitMs: number | null;
   status: 'active' | 'at_risk' | 'churned' | 'new';
   pets: { name: string; type: string }[];
   notes?: string;
@@ -43,140 +49,34 @@ interface InsightCard {
   icon: string;
 }
 
-// Mock customers
-const mockCustomers: Customer[] = [
-  {
-    id: 'CUS001',
-    name: 'Rahul Kumar',
-    image: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-    phone: '•••••43210',
-    totalBookings: 12,
-    totalSpent: 28500,
-    lastVisit: '2 days ago',
-    status: 'active',
-    pets: [{ name: 'Bruno', type: 'Dog' }],
-    notes: 'Prefers morning appointments',
-  },
-  {
-    id: 'CUS002',
-    name: 'Priya Sharma',
-    image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100',
-    phone: '•••••32109',
-    totalBookings: 8,
-    totalSpent: 18200,
-    lastVisit: '1 week ago',
-    status: 'active',
-    pets: [{ name: 'Whiskers', type: 'Cat' }, { name: 'Mittens', type: 'Cat' }],
-  },
-  {
-    id: 'CUS003',
-    name: 'Amit Patel',
-    phone: '•••••21098',
-    totalBookings: 3,
-    totalSpent: 4800,
-    lastVisit: '3 weeks ago',
-    status: 'at_risk',
-    pets: [{ name: 'Rocky', type: 'Dog' }],
-    notes: 'Hasn\'t booked in 3 weeks - send reminder',
-  },
-  {
-    id: 'CUS004',
-    name: 'Neha Gupta',
-    image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100',
-    phone: '•••••10987',
-    totalBookings: 1,
-    totalSpent: 1200,
-    lastVisit: '2 months ago',
-    status: 'churned',
-    pets: [{ name: 'Coco', type: 'Dog' }],
-  },
-  {
-    id: 'CUS005',
-    name: 'Vikram Singh',
-    phone: '•••••23456',
-    totalBookings: 1,
-    totalSpent: 2500,
-    lastVisit: 'Today',
-    status: 'new',
-    pets: [{ name: 'Max', type: 'Dog' }],
-  },
-];
+interface OrderRecord {
+  customerId: string;
+  name: string;
+  image?: string;
+  phone: string;
+  total: number;
+  dateMs: number | null;
+  dateLabel: string;
+  petName?: string;
+  petType?: string;
+}
 
-// Mock insights
-const mockInsights: InsightCard[] = [
-  {
-    id: 'INS001',
-    type: 'revenue',
-    title: 'This Month',
-    value: '₹48,500',
-    change: '+23%',
-    changeType: 'up',
-    icon: 'cash',
-  },
-  {
-    id: 'INS002',
-    type: 'retention',
-    title: 'Repeat Rate',
-    value: '68%',
-    change: '+5%',
-    changeType: 'up',
-    icon: 'refresh',
-  },
-  {
-    id: 'INS003',
-    type: 'growth',
-    title: 'New Customers',
-    value: '12',
-    change: '+4',
-    changeType: 'up',
-    icon: 'people',
-  },
-  {
-    id: 'INS004',
-    type: 'alert',
-    title: 'At Risk',
-    value: '3',
-    change: 'Need attention',
-    changeType: 'neutral',
-    icon: 'warning',
-  },
-];
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length <= 5) return phone;
+  return `•••••${digits.slice(-5)}`;
+}
 
-// Automated campaigns
-const automatedCampaigns = [
-  {
-    id: 'CAM001',
-    name: 'Welcome Series',
-    description: 'Auto-send welcome message to new customers',
-    enabled: true,
-    sent: 45,
-    opened: 38,
-  },
-  {
-    id: 'CAM002',
-    name: 'Reminder Nudge',
-    description: 'Remind inactive customers after 2 weeks',
-    enabled: true,
-    sent: 23,
-    opened: 15,
-  },
-  {
-    id: 'CAM003',
-    name: 'Birthday Special',
-    description: 'Send discount on pet\'s birthday',
-    enabled: false,
-    sent: 0,
-    opened: 0,
-  },
-  {
-    id: 'CAM004',
-    name: 'Win-back Offer',
-    description: 'Special offer to churned customers',
-    enabled: true,
-    sent: 8,
-    opened: 3,
-  },
-];
+function relativeDate(dateMs: number | null, fallback: string): string {
+  if (dateMs === null) return fallback;
+  const diffDays = Math.floor((Date.now() - dateMs) / 86400000);
+  if (diffDays < 0) return fallback;
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`;
+  return new Date(dateMs).toLocaleDateString();
+}
 
 export default function VendorCRMScreen() {
   const navigation = useNavigation<any>();
@@ -188,12 +88,12 @@ export default function VendorCRMScreen() {
 
   // Modal states
   const [messageModalVisible, setMessageModalVisible] = useState(false);
-  const [offerModalVisible, setOfferModalVisible] = useState(false);
-  const [bookingModalVisible, setBookingModalVisible] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [messageText, setMessageText] = useState('');
-  const [offerText, setOfferText] = useState('');
-  const [offerDiscount, setOfferDiscount] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [records, setRecords] = useState<OrderRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const getRoleConfig = () => {
     const roleColor = getRoleColor(userRole);
@@ -210,6 +110,114 @@ export default function VendorCRMScreen() {
   };
 
   const config = getRoleConfig();
+
+  // Customers are derived from real order/booking history — never fabricated.
+  // Suppliers read orders; vets/groomers read bookings.
+  const loadRecords = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const isSupplier = userRole === 'SUPPLIER';
+      const data = isSupplier ? await ordersApi.getMyOrders() : await bookingsApi.getMyBookings();
+      const list = data.orders || data.bookings || data.data || data || [];
+      const normalized: OrderRecord[] = (Array.isArray(list) ? list : [])
+        .map((o: any) => {
+          const customerId = o?.customerId ?? o?.customer?.id ?? o?.user?.id;
+          const name = o?.customerName ?? o?.customer?.name ?? o?.user?.name;
+          if (!name) return null;
+          const rawDate = o?.createdAt ?? o?.date;
+          const parsed = typeof rawDate === 'string' ? new Date(rawDate).getTime() : NaN;
+          const dateMs = Number.isNaN(parsed) ? null : parsed;
+          return {
+            customerId: String(customerId ?? name),
+            name: String(name),
+            image: o?.customerImage ?? o?.customer?.image,
+            phone: maskPhone(String(o?.phone ?? o?.customer?.phone ?? o?.user?.phone ?? '')),
+            total: Number(o?.total ?? o?.amount ?? o?.price ?? 0),
+            dateMs,
+            dateLabel: dateMs !== null ? relativeDate(dateMs, '') : String(o?.date ?? ''),
+            petName: o?.petName ?? o?.pet?.name ?? (Array.isArray(o?.items) ? undefined : undefined),
+            petType: o?.petType ?? o?.pet?.species,
+          } as OrderRecord;
+        })
+        .filter((r): r is OrderRecord => r !== null);
+      setRecords(normalized);
+    } catch (error) {
+      logger.error('Failed to load CRM data:', error);
+      setRecords([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load customer data.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [userRole]);
+
+  useEffect(() => {
+    loadRecords();
+  }, [loadRecords]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadRecords();
+  };
+
+  const customers: Customer[] = (() => {
+    const groups = new Map<string, OrderRecord[]>();
+    for (const r of records) {
+      const list = groups.get(r.customerId) ?? [];
+      list.push(r);
+      groups.set(r.customerId, list);
+    }
+    const now = Date.now();
+    return [...groups.entries()].map(([id, list]) => {
+      const dated = list.map(r => r.dateMs).filter((d): d is number => d !== null);
+      const last = dated.length > 0 ? Math.max(...dated) : null;
+      const first = dated.length > 0 ? Math.min(...dated) : null;
+      const daysSinceLast = last !== null ? Math.floor((now - last) / 86400000) : 999;
+      const daysSinceFirst = first !== null ? Math.floor((now - first) / 86400000) : 999;
+      const status: Customer['status'] =
+        list.length === 1 && daysSinceFirst <= 7 ? 'new'
+        : daysSinceLast <= 14 ? 'active'
+        : daysSinceLast <= 45 ? 'at_risk' : 'churned';
+      const first2 = list[0];
+      return {
+        id,
+        userId: list[0].customerId,
+        name: first2.name,
+        image: first2.image,
+        phone: first2.phone,
+        totalBookings: list.length,
+        totalSpent: list.reduce((s, r) => s + r.total, 0),
+        lastVisit: relativeDate(last, first2.dateLabel || '—'),
+        lastVisitMs: last,
+        status,
+        pets: list
+          .filter(r => r.petName)
+          .map(r => ({ name: r.petName as string, type: r.petType ?? 'Pet' }))
+          .filter((p, i, arr) => arr.findIndex(x => x.name === p.name) === i),
+      };
+    });
+  })();
+
+  const insights: InsightCard[] = (() => {
+    const revenue = records.reduce((s, r) => s + r.total, 0);
+    const unique = new Set(records.map(r => r.customerId)).size;
+    const repeat = customers.filter(c => c.totalBookings > 1).length;
+    const monthAgo = Date.now() - 30 * 86400000;
+    const newCount = customers.filter(c => {
+      const first = Math.min(...records.filter(r => r.customerId === c.id).map(r => r.dateMs ?? Infinity));
+      return first >= monthAgo;
+    }).length;
+    const atRisk = customers.filter(c => c.status === 'at_risk' || c.status === 'churned').length;
+    return [
+      { id: 'INS001', type: 'revenue', title: 'Total Revenue', value: `₹${revenue.toLocaleString()}`, change: `${records.length} orders`, changeType: 'neutral', icon: 'cash' },
+      { id: 'INS002', type: 'retention', title: 'Repeat Customers', value: `${repeat}`, change: `${unique} total customers`, changeType: 'neutral', icon: 'refresh' },
+      { id: 'INS003', type: 'growth', title: 'New (30 days)', value: `${newCount}`, change: 'this month', changeType: 'neutral', icon: 'people' },
+      { id: 'INS004', type: 'alert', title: 'Needs Attention', value: `${atRisk}`, change: 'at risk or churned', changeType: 'neutral', icon: 'warning' },
+    ];
+  })();
+
+  const loyalCustomers = customers.filter(c => c.totalBookings >= 10);
+  const atRiskCustomers = customers.filter(c => c.status === 'at_risk');
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -232,13 +240,8 @@ export default function VendorCRMScreen() {
   };
 
   const filteredCustomers = selectedFilter === 'all'
-    ? mockCustomers
-    : mockCustomers.filter(c => c.status === selectedFilter);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
-  };
+    ? customers
+    : customers.filter(c => c.status === selectedFilter);
 
   // Handler functions for CRM actions
   const handleMessage = (customer: Customer) => {
@@ -247,55 +250,30 @@ export default function VendorCRMScreen() {
     setMessageModalVisible(true);
   };
 
-  const handleSendMessage = () => {
-    if (!messageText.trim() || !selectedCustomer) return;
-
-    Alert.alert(
-      'Message Sent',
-      `Your message has been sent to ${selectedCustomer.name}.`,
-      [{ text: 'OK' }]
-    );
-    setMessageModalVisible(false);
-    setMessageText('');
-    setSelectedCustomer(null);
-  };
-
-  const handleOffer = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setOfferText('');
-    setOfferDiscount('10');
-    setOfferModalVisible(true);
-  };
-
-  const handleSendOffer = () => {
-    if (!selectedCustomer) return;
-
-    Alert.alert(
-      'Offer Sent',
-      `${offerDiscount}% discount offer sent to ${selectedCustomer.name}!`,
-      [{ text: 'OK' }]
-    );
-    setOfferModalVisible(false);
-    setOfferText('');
-    setOfferDiscount('');
-    setSelectedCustomer(null);
-  };
-
-  const handleBook = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setBookingModalVisible(true);
-  };
-
-  const handleConfirmBooking = (time: string) => {
-    if (!selectedCustomer) return;
-
-    Alert.alert(
-      'Booking Request Sent',
-      `Booking request for ${time} sent to ${selectedCustomer.name}. They'll receive a notification to confirm.`,
-      [{ text: 'OK' }]
-    );
-    setBookingModalVisible(false);
-    setSelectedCustomer(null);
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || !selectedCustomer || sendingMessage) return;
+    const customerId = selectedCustomer.userId;
+    if (!user?.id || !customerId) {
+      Alert.alert('Cannot message', 'Messaging is only available for customers with an account.');
+      return;
+    }
+    setSendingMessage(true);
+    try {
+      const threadId = await createOrGetChatThread(
+        user.id, user.name || 'User', user.image || '',
+        customerId, selectedCustomer.name, selectedCustomer.image || ''
+      );
+      await sendChatMessage(threadId, user.id, user.name || 'User', messageText.trim(), 'text');
+      Alert.alert('Message Sent', `Your message has been sent to ${selectedCustomer.name}.`);
+      setMessageModalVisible(false);
+      setMessageText('');
+      setSelectedCustomer(null);
+    } catch (error) {
+      logger.error('CRM message failed:', error);
+      Alert.alert('Message failed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
   // Render Message Modal
@@ -363,139 +341,17 @@ export default function VendorCRMScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.sendButton, { backgroundColor: config.color }, !messageText.trim() && styles.sendButtonDisabled]}
+            style={[styles.sendButton, { backgroundColor: config.color }, (!messageText.trim() || sendingMessage) && styles.sendButtonDisabled]}
             onPress={handleSendMessage}
-            disabled={!messageText.trim()}
+            disabled={!messageText.trim() || sendingMessage}
           >
-            <Ionicons name="send" size={18} color="#fff" />
-            <Text style={styles.sendButtonText}>Send Message</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  // Render Offer Modal
-  const renderOfferModal = () => (
-    <Modal
-      visible={offerModalVisible}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setOfferModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              Send Offer to {selectedCustomer?.name}
-            </Text>
-            <TouchableOpacity onPress={() => setOfferModalVisible(false)}>
-              <Ionicons name="close" size={24} color={colors.gray[500]} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.modalBody}>
-            <Text style={styles.inputLabel}>Discount Percentage</Text>
-            <View style={styles.discountRow}>
-              {['10', '15', '20', '25'].map((discount) => (
-                <TouchableOpacity
-                  key={discount}
-                  style={[
-                    styles.discountChip,
-                    offerDiscount === discount && { backgroundColor: config.color },
-                  ]}
-                  onPress={() => setOfferDiscount(discount)}
-                >
-                  <Text style={[
-                    styles.discountChipText,
-                    offerDiscount === discount && { color: '#fff' },
-                  ]}>
-                    {discount}%
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.inputLabel}>Personal Message (Optional)</Text>
-            <TextInput
-              style={styles.messageInput}
-              placeholder="Add a personal note..."
-              placeholderTextColor={colors.gray[400]}
-              value={offerText}
-              onChangeText={setOfferText}
-              multiline
-              numberOfLines={3}
-            />
-
-            <View style={styles.offerPreview}>
-              <Ionicons name="gift" size={20} color="#F59E0B" />
-              <Text style={styles.offerPreviewText}>
-                {selectedCustomer?.name} will receive a {offerDiscount}% discount code valid for 7 days
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.sendButton, { backgroundColor: '#F59E0B' }]}
-            onPress={handleSendOffer}
-          >
-            <Ionicons name="gift" size={18} color="#fff" />
-            <Text style={styles.sendButtonText}>Send Offer</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  // Render Booking Modal
-  const renderBookingModal = () => (
-    <Modal
-      visible={bookingModalVisible}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setBookingModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              Schedule with {selectedCustomer?.name}
-            </Text>
-            <TouchableOpacity onPress={() => setBookingModalVisible(false)}>
-              <Ionicons name="close" size={24} color={colors.gray[500]} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.modalBody}>
-            {selectedCustomer?.pets && selectedCustomer.pets.length > 0 && (
-              <View style={styles.petInfo}>
-                <Ionicons name="paw" size={16} color={config.color} />
-                <Text style={styles.petInfoText}>
-                  For: {selectedCustomer.pets.map(p => `${p.name} (${p.type})`).join(', ')}
-                </Text>
-              </View>
+            {sendingMessage ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="send" size={18} color="#fff" />
             )}
-
-            <Text style={styles.inputLabel}>Select Time Slot</Text>
-            <View style={styles.timeSlots}>
-              {['Today, 2:00 PM', 'Today, 4:00 PM', 'Tomorrow, 10:00 AM', 'Tomorrow, 2:00 PM'].map((time) => (
-                <TouchableOpacity
-                  key={time}
-                  style={styles.timeSlot}
-                  onPress={() => handleConfirmBooking(time)}
-                >
-                  <Ionicons name="time-outline" size={18} color={config.color} />
-                  <Text style={styles.timeSlotText}>{time}</Text>
-                  <Ionicons name="chevron-forward" size={18} color={colors.gray[400]} />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TouchableOpacity style={styles.customTimeButton}>
-              <Ionicons name="calendar-outline" size={18} color={config.color} />
-              <Text style={[styles.customTimeText, { color: config.color }]}>Choose Custom Date & Time</Text>
-            </TouchableOpacity>
-          </View>
+            <Text style={styles.sendButtonText}>{sendingMessage ? 'Sending...' : 'Send Message'}</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -528,7 +384,7 @@ export default function VendorCRMScreen() {
                 styles.filterBadgeText,
                 selectedFilter === filter && { color: colors.white },
               ]}>
-                {filter === 'all' ? mockCustomers.length : mockCustomers.filter(c => c.status === filter).length}
+                {filter === 'all' ? customers.length : customers.filter(c => c.status === filter).length}
               </Text>
             </View>
           </TouchableOpacity>
@@ -536,7 +392,35 @@ export default function VendorCRMScreen() {
       </ScrollView>
 
       {/* Customer List */}
-      {filteredCustomers.map((customer) => (
+      {loading ? (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={config.color} />
+          <Text style={styles.centerStateText}>Loading customers...</Text>
+        </View>
+      ) : loadError ? (
+        <View style={styles.centerState}>
+          <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+          <Text style={styles.centerStateTitle}>Could not load customers</Text>
+          <Text style={styles.centerStateText}>{loadError}</Text>
+          <TouchableOpacity
+            style={[styles.sendButton, { backgroundColor: config.color, marginTop: 16 }]}
+            onPress={() => { setLoading(true); loadRecords(); }}
+          >
+            <Text style={styles.sendButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : filteredCustomers.length === 0 ? (
+        <View style={styles.centerState}>
+          <Ionicons name="people-outline" size={48} color={colors.gray[300]} />
+          <Text style={styles.centerStateTitle}>No customers yet</Text>
+          <Text style={styles.centerStateText}>
+            {customers.length === 0
+              ? 'Customers will appear here after your first order or booking.'
+              : 'No customers match this filter.'}
+          </Text>
+        </View>
+      ) : (
+      filteredCustomers.map((customer) => (
         <TouchableOpacity key={customer.id} style={styles.customerCard} activeOpacity={0.8}>
           <View style={styles.customerHeader}>
             {customer.image ? (
@@ -594,105 +478,34 @@ export default function VendorCRMScreen() {
 
           <View style={styles.customerActions}>
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: `${config.color}15` }]}
+              style={[styles.actionButton, { backgroundColor: `${config.color}15`, flex: 1 }]}
               onPress={() => handleMessage(customer)}
             >
               <Ionicons name="chatbubble-outline" size={18} color={config.color} />
               <Text style={[styles.actionButtonText, { color: config.color }]}>Message</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#FEF3C715' }]}
-              onPress={() => handleOffer(customer)}
-            >
-              <Ionicons name="gift-outline" size={18} color="#F59E0B" />
-              <Text style={[styles.actionButtonText, { color: '#F59E0B' }]}>Offer</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.gray[100] }]}
-              onPress={() => handleBook(customer)}
-            >
-              <Ionicons name="calendar-outline" size={18} color={colors.gray[700]} />
-              <Text style={[styles.actionButtonText, { color: colors.gray[700] }]}>Book</Text>
-            </TouchableOpacity>
           </View>
         </TouchableOpacity>
-      ))}
+      )))}
     </>
   );
 
   const renderCampaignsTab = () => (
-    <>
-      <View style={styles.campaignHeader}>
-        <Text style={styles.campaignTitle}>Automated Campaigns</Text>
-        <Text style={styles.campaignSubtitle}>Set up once, run forever. Pawzr handles customer engagement for you.</Text>
-      </View>
-
-      {automatedCampaigns.map((campaign) => (
-        <View key={campaign.id} style={styles.campaignCard}>
-          <View style={styles.campaignInfo}>
-            <View style={styles.campaignNameRow}>
-              <Text style={styles.campaignName}>{campaign.name}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.campaignToggle,
-                  { backgroundColor: campaign.enabled ? '#10B981' : colors.gray[300] },
-                ]}
-              >
-                <View style={[
-                  styles.campaignToggleKnob,
-                  { alignSelf: campaign.enabled ? 'flex-end' : 'flex-start' },
-                ]} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.campaignDescription}>{campaign.description}</Text>
-          </View>
-
-          {campaign.enabled && campaign.sent > 0 && (
-            <View style={styles.campaignStats}>
-              <View style={styles.campaignStat}>
-                <Text style={styles.campaignStatValue}>{campaign.sent}</Text>
-                <Text style={styles.campaignStatLabel}>Sent</Text>
-              </View>
-              <View style={styles.campaignStat}>
-                <Text style={styles.campaignStatValue}>{campaign.opened}</Text>
-                <Text style={styles.campaignStatLabel}>Opened</Text>
-              </View>
-              <View style={styles.campaignStat}>
-                <Text style={[styles.campaignStatValue, { color: '#10B981' }]}>
-                  {Math.round((campaign.opened / campaign.sent) * 100)}%
-                </Text>
-                <Text style={styles.campaignStatLabel}>Rate</Text>
-              </View>
-            </View>
-          )}
-        </View>
-      ))}
-
-      {/* Pro Feature Teaser */}
-      <View style={styles.proFeatureCard}>
-        <View style={styles.proFeatureHeader}>
-          <View style={styles.proBadge}>
-            <Ionicons name="diamond" size={14} color="#fff" />
-            <Text style={styles.proBadgeText}>PRO</Text>
-          </View>
-          <Text style={styles.proFeatureTitle}>Advanced Automation</Text>
-        </View>
-        <Text style={styles.proFeatureText}>
-          Create custom campaigns, A/B test messages, and get detailed analytics with Pro Partner plan.
-        </Text>
-        <TouchableOpacity style={styles.upgradeButton}>
-          <Text style={styles.upgradeButtonText}>Upgrade to Pro</Text>
-          <Ionicons name="arrow-forward" size={16} color="#8B5CF6" />
-        </TouchableOpacity>
-      </View>
-    </>
+    <View style={styles.centerState}>
+      <Ionicons name="megaphone-outline" size={48} color={colors.gray[300]} />
+      <Text style={styles.centerStateTitle}>Campaigns coming soon</Text>
+      <Text style={styles.centerStateText}>
+        Automated welcome messages, reminders, and win-back offers are not available yet.
+        Message customers directly from the Customers tab meanwhile.
+      </Text>
+    </View>
   );
 
   const renderInsightsTab = () => (
     <>
       {/* Insight Cards */}
       <View style={styles.insightsGrid}>
-        {mockInsights.map((insight) => (
+        {insights.map((insight) => (
           <View key={insight.id} style={styles.insightCard}>
             <View style={[
               styles.insightIcon,
@@ -742,7 +555,9 @@ export default function VendorCRMScreen() {
       <View style={styles.metricCard}>
         <View style={styles.metricRow}>
           <Text style={styles.metricLabel}>Average Booking Value</Text>
-          <Text style={styles.metricValue}>₹1,850</Text>
+          <Text style={styles.metricValue}>
+            ₹{records.length === 0 ? 0 : Math.round(records.reduce((s, r) => s + r.total, 0) / records.length).toLocaleString()}
+          </Text>
         </View>
         <View style={styles.metricBar}>
           <View style={[styles.metricBarFill, { width: '75%', backgroundColor: config.color }]} />
@@ -751,7 +566,9 @@ export default function VendorCRMScreen() {
       <View style={styles.metricCard}>
         <View style={styles.metricRow}>
           <Text style={styles.metricLabel}>Customer Lifetime Value</Text>
-          <Text style={styles.metricValue}>₹12,400</Text>
+          <Text style={styles.metricValue}>
+            ₹{customers.length === 0 ? 0 : Math.round(customers.reduce((s, c) => s + c.totalSpent, 0) / customers.length).toLocaleString()}
+          </Text>
         </View>
         <View style={styles.metricBar}>
           <View style={[styles.metricBarFill, { width: '60%', backgroundColor: '#10B981' }]} />
@@ -759,8 +576,10 @@ export default function VendorCRMScreen() {
       </View>
       <View style={styles.metricCard}>
         <View style={styles.metricRow}>
-          <Text style={styles.metricLabel}>Booking Conversion Rate</Text>
-          <Text style={styles.metricValue}>42%</Text>
+          <Text style={styles.metricLabel}>Repeat Customer Rate</Text>
+          <Text style={styles.metricValue}>
+            {customers.length === 0 ? 0 : Math.round((customers.filter(c => c.totalBookings > 1).length / customers.length) * 100)}%
+          </Text>
         </View>
         <View style={styles.metricBar}>
           <View style={[styles.metricBarFill, { width: '42%', backgroundColor: '#F59E0B' }]} />
@@ -768,31 +587,38 @@ export default function VendorCRMScreen() {
       </View>
 
       {/* Recommendations */}
-      <Text style={styles.sectionTitle}>AI Recommendations</Text>
+      <Text style={styles.sectionTitle}>Recommendations</Text>
+      {atRiskCustomers.length > 0 && (
       <View style={styles.recommendationCard}>
         <View style={[styles.recommendationIcon, { backgroundColor: '#FEF3C715' }]}>
           <Ionicons name="bulb" size={20} color="#F59E0B" />
         </View>
         <View style={styles.recommendationContent}>
           <Text style={styles.recommendationTitle}>Send Reminder to At-Risk Customers</Text>
-          <Text style={styles.recommendationText}>3 customers haven't visited in 2+ weeks. A quick message could bring them back.</Text>
+          <Text style={styles.recommendationText}>
+            {atRiskCustomers.length} customer{atRiskCustomers.length > 1 ? 's haven' : ' has'}n't visited in 2+ weeks. A quick message could bring them back.
+          </Text>
         </View>
-        <TouchableOpacity style={styles.recommendationAction}>
-          <Ionicons name="send" size={18} color={config.color} />
-        </TouchableOpacity>
       </View>
+      )}
+      {loyalCustomers.length > 0 && (
       <View style={styles.recommendationCard}>
         <View style={[styles.recommendationIcon, { backgroundColor: '#D1FAE515' }]}>
           <Ionicons name="gift" size={20} color="#10B981" />
         </View>
         <View style={styles.recommendationContent}>
-          <Text style={styles.recommendationTitle}>Loyalty Reward Ready</Text>
-          <Text style={styles.recommendationText}>2 customers reached 10+ bookings. Send a thank you offer!</Text>
+          <Text style={styles.recommendationTitle}>Loyal Customers</Text>
+          <Text style={styles.recommendationText}>
+            {loyalCustomers.length} customer{loyalCustomers.length > 1 ? 's have' : ' has'} 10+ bookings. A thank-you message goes a long way!
+          </Text>
         </View>
-        <TouchableOpacity style={styles.recommendationAction}>
-          <Ionicons name="arrow-forward" size={18} color={config.color} />
-        </TouchableOpacity>
       </View>
+      )}
+      {atRiskCustomers.length === 0 && loyalCustomers.length === 0 && (
+        <Text style={styles.emptyInsightsText}>
+          Personalized recommendations will appear here once you have more customer history.
+        </Text>
+      )}
     </>
   );
 
@@ -800,8 +626,6 @@ export default function VendorCRMScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Modals */}
       {renderMessageModal()}
-      {renderOfferModal()}
-      {renderBookingModal()}
 
       {/* Header */}
       <View style={styles.header}>
@@ -878,6 +702,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  centerState: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  centerStateTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.gray[800],
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  centerStateText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  emptyInsightsText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    fontStyle: 'italic',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
   header: {
     flexDirection: 'row',

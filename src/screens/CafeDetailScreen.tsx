@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,15 @@ import {
   Modal,
   TextInput,
   Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { cafesApi } from '../lib/api';
+import logger from '../lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAFE_COLOR = '#14B8A6';
@@ -40,7 +44,20 @@ interface CafeDetail {
   seatingCapacity: number;
   upcomingEvents: { id: string; title: string; date: string; image: string }[];
   reviews: { name: string; avatar: string; rating: number; comment: string; date: string; petName: string }[];
-  menuHighlights: { name: string; price: number; image: string; isPetFriendly: boolean }[];
+}
+
+function nextFiveDays(): { label: string; value: string }[] {
+  const days: { label: string; value: string }[] = [];
+  const now = new Date();
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    const value = `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+    const label =
+      i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    days.push({ label, value });
+  }
+  return days;
 }
 
 export default function CafeDetailScreen() {
@@ -54,71 +71,106 @@ export default function CafeDetailScreen() {
   const [guestCount, setGuestCount] = useState(2);
   const [petName, setPetName] = useState('');
   const [isBooking, setIsBooking] = useState(false);
+  const [cafe, setCafe] = useState<CafeDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Mock cafe data
-  const cafe: CafeDetail = {
-    id: cafeId || '1',
-    name: 'Pawsome Cafe',
-    description: 'Pawsome Cafe is a cozy pet-friendly haven in the heart of Koramangala. We welcome all well-behaved pets and their owners to enjoy our specially curated menu featuring both human and pet-friendly options.\n\nOur spacious indoor and outdoor seating areas are designed with pets in mind, featuring water stations, treat bars, and a dedicated play zone for social pups.',
-    coverImage: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800',
-    photos: [
-      'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400',
-      'https://images.unsplash.com/photo-1559925393-8be0ec4767c8?w=400',
-      'https://images.unsplash.com/photo-1521017432531-fbd92d768814?w=400',
-      'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400',
-    ],
-    rating: 4.8,
-    reviewCount: 234,
-    priceRange: '$$',
-    address: '123, 5th Block, Koramangala',
-    city: 'Bangalore',
-    phone: '+91 98765 43210',
-    website: 'www.pawsomecafe.in',
-    petAmenities: ['Water Bowls', 'Pet Treats', 'Play Area', 'Pet Menu', 'Leash Hooks', 'Pet First Aid'],
-    generalAmenities: ['WiFi', 'AC', 'Outdoor Seating', 'Parking', 'Card Payment', 'Live Music (Weekends)'],
-    openTime: '10:00 AM',
-    closeTime: '10:00 PM',
-    workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    seatingCapacity: 50,
-    upcomingEvents: [
-      { id: '1', title: 'Sunday Pet Meetup', date: 'Feb 16', image: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=200' },
-      { id: '2', title: 'Adoption Drive', date: 'Feb 22', image: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=200' },
-    ],
-    reviews: [
-      {
-        name: 'Priya Sharma',
-        avatar: 'https://randomuser.me/api/portraits/women/1.jpg',
-        rating: 5,
-        comment: 'Absolutely love this place! Bruno had the time of his life playing with other dogs. The staff is super friendly and the food is amazing.',
-        date: '2 days ago',
-        petName: 'Bruno',
-      },
-      {
-        name: 'Rahul Verma',
-        avatar: 'https://randomuser.me/api/portraits/men/2.jpg',
-        rating: 4,
-        comment: 'Great atmosphere for pet parents. Whiskers was a bit shy at first but warmed up quickly. Will definitely visit again!',
-        date: '1 week ago',
-        petName: 'Whiskers',
-      },
-    ],
-    menuHighlights: [
-      { name: 'Cappuccino', price: 180, image: 'https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=200', isPetFriendly: false },
-      { name: 'Pup-cakes', price: 120, image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=200', isPetFriendly: true },
-      { name: 'Chicken Sandwich', price: 250, image: 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=200', isPetFriendly: false },
-      { name: 'Doggy Ice Cream', price: 80, image: 'https://images.unsplash.com/photo-1497034825429-c343d7c6a68f?w=200', isPetFriendly: true },
-    ],
-  };
-
-  const availableDates = [
-    { date: 'Today', value: '2025-02-12' },
-    { date: 'Tomorrow', value: '2025-02-13' },
-    { date: 'Fri, Feb 14', value: '2025-02-14' },
-    { date: 'Sat, Feb 15', value: '2025-02-15' },
-    { date: 'Sun, Feb 16', value: '2025-02-16' },
-  ];
-
+  const availableDates = nextFiveDays();
   const availableTimes = ['11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM', '7:00 PM'];
+
+  const loadCafe = useCallback(async () => {
+    if (!cafeId) {
+      setLoadError('No cafe selected.');
+      setLoading(false);
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [detailData, eventsData, reviewsData] = await Promise.all([
+        cafesApi.getCafe(String(cafeId)),
+        cafesApi.getCafeEvents(String(cafeId)).catch(() => ({ events: [] })),
+        cafesApi.getCafeReviews(String(cafeId)).catch(() => ({ reviews: [] })),
+      ]);
+      const item = detailData.cafe || detailData || {};
+      const photos = Array.isArray(item.photos) ? item.photos.map(String)
+        : Array.isArray(item.images) ? item.images.map(String) : [];
+      const coverImage = item.coverImage ?? photos[0] ?? item.image ?? '';
+      const eventList = eventsData.events || eventsData || [];
+      const reviewList = reviewsData.reviews || reviewsData || [];
+      setCafe({
+        id: String(item.id ?? cafeId),
+        name: item.name ?? 'Pet cafe',
+        description: item.description ?? '',
+        coverImage,
+        photos,
+        rating: Number(item.rating ?? 0),
+        reviewCount: Number(item.reviewCount ?? (Array.isArray(reviewList) ? reviewList.length : 0)),
+        priceRange: item.priceRange ?? '',
+        address: item.address ?? '',
+        city: item.city ?? '',
+        phone: item.phone ?? '',
+        website: item.website ?? undefined,
+        petAmenities: Array.isArray(item.petAmenities) ? item.petAmenities.map(String) : [],
+        generalAmenities: Array.isArray(item.generalAmenities ?? item.amenities)
+          ? (item.generalAmenities ?? item.amenities).map(String) : [],
+        openTime: item.openTime ?? '',
+        closeTime: item.closeTime ?? '',
+        workingDays: Array.isArray(item.workingDays) ? item.workingDays.map(String) : [],
+        seatingCapacity: Number(item.seatingCapacity ?? 0),
+        upcomingEvents: (Array.isArray(eventList) ? eventList : []).map((e: any) => ({
+          id: String(e.id ?? e._id ?? ''),
+          title: String(e.title ?? 'Event'),
+          date: String(e.date ?? ''),
+          image: String(e.coverImage ?? e.image ?? ''),
+        })).filter((e: { id: string }) => e.id !== ''),
+        reviews: (Array.isArray(reviewList) ? reviewList : []).map((r: any) => ({
+          name: String(r.name ?? r.user?.name ?? 'Guest'),
+          avatar: String(r.avatar ?? r.user?.image ?? ''),
+          rating: Number(r.rating ?? 0),
+          comment: String(r.comment ?? r.text ?? ''),
+          date: String(r.date ?? r.createdAt ?? ''),
+          petName: String(r.petName ?? r.pet?.name ?? ''),
+        })),
+      });
+    } catch (error) {
+      logger.error('Failed to load cafe:', error);
+      setCafe(null);
+      setLoadError(error instanceof Error ? error.message : 'Could not load this cafe.');
+    } finally {
+      setLoading(false);
+    }
+  }, [cafeId]);
+
+  useEffect(() => {
+    loadCafe();
+  }, [loadCafe]);
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={CAFE_COLOR} />
+        </View>
+      </View>
+    );
+  }
+
+  if (loadError || !cafe) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.centerState}>
+          <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+          <Text style={styles.centerStateText}>{loadError ?? 'Cafe not found.'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => { setLoading(true); loadCafe(); }}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
+            <Text style={styles.backLinkText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   const handleBooking = async () => {
     if (!selectedDate) {
@@ -131,7 +183,13 @@ export default function CafeDetailScreen() {
     }
 
     setIsBooking(true);
-    setTimeout(() => {
+    try {
+      await cafesApi.bookTable(cafe.id, {
+        date: selectedDate,
+        time: selectedTime,
+        guestCount,
+        petName: petName.trim() || undefined,
+      });
       setIsBooking(false);
       setShowBookingModal(false);
       Alert.alert(
@@ -139,7 +197,39 @@ export default function CafeDetailScreen() {
         `Your table for ${guestCount} at ${cafe.name} has been reserved for ${selectedDate} at ${selectedTime}. You'll receive a confirmation message shortly.`,
         [{ text: 'OK' }]
       );
-    }, 1500);
+    } catch (error) {
+      setIsBooking(false);
+      logger.error('Table booking failed:', error);
+      Alert.alert('Booking failed', error instanceof Error ? error.message : 'Please try again.');
+    }
+  };
+
+  const handleCall = () => {
+    if (!cafe.phone) {
+      Alert.alert('No phone number', 'This cafe has not listed a phone number.');
+      return;
+    }
+    Linking.openURL(`tel:${cafe.phone.replace(/\s/g, '')}`).catch(() => {
+      Alert.alert('Could not place call', 'Please try again.');
+    });
+  };
+
+  const handleDirections = () => {
+    const query = encodeURIComponent([cafe.address, cafe.city].filter(Boolean).join(', ') || cafe.name);
+    Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`).catch(() => {
+      Alert.alert('Could not open maps', 'Please try again.');
+    });
+  };
+
+  const handleWebsite = () => {
+    if (!cafe.website) {
+      Alert.alert('No website', 'This cafe has not listed a website.');
+      return;
+    }
+    const url = /^https?:\/\//i.test(cafe.website) ? cafe.website : `https://${cafe.website}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Could not open website', 'Please try again.');
+    });
   };
 
   const renderStars = (rating: number) => {
@@ -158,7 +248,7 @@ export default function CafeDetailScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Hero Image */}
         <View style={styles.heroContainer}>
-          <Image source={{ uri: cafe.coverImage }} style={styles.heroImage} />
+          {!!cafe.coverImage && <Image source={{ uri: cafe.coverImage }} style={styles.heroImage} />}
           <View style={styles.heroOverlay} />
           <SafeAreaView style={styles.heroContent}>
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -218,15 +308,15 @@ export default function CafeDetailScreen() {
 
           {/* Contact Buttons */}
           <View style={styles.contactRow}>
-            <TouchableOpacity style={styles.contactButton}>
+            <TouchableOpacity style={styles.contactButton} onPress={handleCall}>
               <Ionicons name="call" size={20} color={CAFE_COLOR} />
               <Text style={styles.contactButtonText}>Call</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.contactButton}>
+            <TouchableOpacity style={styles.contactButton} onPress={handleDirections}>
               <Ionicons name="navigate" size={20} color={CAFE_COLOR} />
               <Text style={styles.contactButtonText}>Directions</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.contactButton}>
+            <TouchableOpacity style={styles.contactButton} onPress={handleWebsite}>
               <Ionicons name="globe" size={20} color={CAFE_COLOR} />
               <Text style={styles.contactButtonText}>Website</Text>
             </TouchableOpacity>
@@ -268,25 +358,6 @@ export default function CafeDetailScreen() {
             </View>
           </View>
 
-          {/* Menu Highlights */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Menu Highlights</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {cafe.menuHighlights.map((item, index) => (
-                <View key={index} style={styles.menuCard}>
-                  <Image source={{ uri: item.image }} style={styles.menuImage} />
-                  {item.isPetFriendly && (
-                    <View style={styles.petFriendlyBadge}>
-                      <Ionicons name="paw" size={10} color={colors.white} />
-                    </View>
-                  )}
-                  <Text style={styles.menuName}>{item.name}</Text>
-                  <Text style={styles.menuPrice}>{item.price}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-
           {/* Upcoming Events */}
           {cafe.upcomingEvents.length > 0 && (
             <View style={styles.section}>
@@ -322,10 +393,13 @@ export default function CafeDetailScreen() {
                 <Text style={[styles.seeAllText, { color: CAFE_COLOR }]}>See All</Text>
               </TouchableOpacity>
             </View>
-            {cafe.reviews.map((review, index) => (
+            {cafe.reviews.length === 0 ? (
+              <Text style={styles.noReviewsText}>No reviews yet — be the first to visit!</Text>
+            ) : (
+            cafe.reviews.map((review, index) => (
               <View key={index} style={styles.reviewCard}>
                 <View style={styles.reviewHeader}>
-                  <Image source={{ uri: review.avatar }} style={styles.reviewAvatar} />
+                  {!!review.avatar && <Image source={{ uri: review.avatar }} style={styles.reviewAvatar} />}
                   <View style={styles.reviewInfo}>
                     <Text style={styles.reviewName}>{review.name}</Text>
                     <View style={styles.reviewMeta}>
@@ -335,12 +409,14 @@ export default function CafeDetailScreen() {
                   </View>
                 </View>
                 <Text style={styles.reviewComment}>{review.comment}</Text>
+                {!!review.petName && (
                 <View style={styles.reviewPet}>
                   <Ionicons name="paw" size={12} color={CAFE_COLOR} />
                   <Text style={styles.reviewPetText}>Visited with {review.petName}</Text>
                 </View>
+                )}
               </View>
-            ))}
+            )))}
           </View>
 
           {/* Photo Gallery */}
@@ -414,7 +490,7 @@ export default function CafeDetailScreen() {
                       styles.dateOptionText,
                       selectedDate === date.value && { color: colors.white },
                     ]}>
-                      {date.date}
+                      {date.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -504,6 +580,13 @@ export default function CafeDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
+  centerState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  centerStateText: { fontSize: 15, color: colors.gray[500], marginTop: 12, textAlign: 'center', lineHeight: 22 },
+  retryButton: { marginTop: 16, backgroundColor: CAFE_COLOR, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
+  backLink: { marginTop: 12, paddingVertical: 8 },
+  backLinkText: { fontSize: 14, fontWeight: '600', color: CAFE_COLOR },
+  noReviewsText: { fontSize: 14, color: colors.gray[500], fontStyle: 'italic' },
   heroContainer: { height: 280, position: 'relative' },
   heroImage: { width: '100%', height: '100%' },
   heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.2)' },

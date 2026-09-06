@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,14 @@ import {
   Alert,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { eventsApi } from '../lib/api';
+import logger from '../lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CAFE_COLOR = '#14B8A6';
@@ -59,51 +62,97 @@ export default function EventDetailScreen() {
   const [petName, setPetName] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
   const [isBooking, setIsBooking] = useState(false);
+  const [event, setEvent] = useState<EventDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Mock event data - in production, fetch based on eventId
-  const event: EventDetail = {
-    id: eventId || '1',
-    title: 'Sunday Pet Meetup',
-    description: 'Join us for a fun-filled afternoon with fellow pet parents! Our Sunday Pet Meetup is the perfect opportunity to socialize your furry friends while enjoying delicious snacks and beverages.\n\nActivities include:\n- Supervised play sessions\n- Pet-friendly treats and refreshments\n- Photo opportunities\n- Meet other pet parents\n- Expert tips from our resident pet behaviorist',
-    eventType: 'meetup',
-    date: '2025-02-16',
-    startTime: '3:00 PM',
-    endTime: '6:00 PM',
-    coverImage: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=800',
-    photos: [
-      'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400',
-      'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=400',
-      'https://images.unsplash.com/photo-1477884213360-7e9d7dcc1e48?w=400',
-    ],
-    price: 299,
-    capacity: 30,
-    bookedCount: 24,
-    cafeName: 'Pawsome Cafe',
-    cafeId: '1',
-    cafeImage: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=200',
-    cafeRating: 4.8,
-    location: 'Koramangala 5th Block, Bangalore',
-    petTypes: ['Dogs', 'Cats'],
-    amenities: ['Water Bowls', 'Play Area', 'AC', 'Pet Treats', 'First Aid'],
-    requirements: ['Pets must be vaccinated', 'Leash required', 'Age 6 months+'],
-    organizer: {
-      name: 'Pawsome Cafe Team',
-      phone: '+91 98765 43210',
-    },
-    attendees: [
-      { name: 'Priya', avatar: 'https://randomuser.me/api/portraits/women/1.jpg' },
-      { name: 'Rahul', avatar: 'https://randomuser.me/api/portraits/men/2.jpg' },
-      { name: 'Anita', avatar: 'https://randomuser.me/api/portraits/women/3.jpg' },
-      { name: 'Vikram', avatar: 'https://randomuser.me/api/portraits/men/4.jpg' },
-      { name: 'Meera', avatar: 'https://randomuser.me/api/portraits/women/5.jpg' },
-    ],
-  };
+  const loadEvent = useCallback(async () => {
+    if (!eventId) {
+      setLoadError('No event selected.');
+      setLoading(false);
+      return;
+    }
+    setLoadError(null);
+    try {
+      const data = await eventsApi.getEvent(String(eventId));
+      const item = data.event || data || {};
+      const capacity = Number(item.capacity ?? 0);
+      setEvent({
+        id: String(item.id ?? eventId),
+        title: item.title ?? 'Untitled event',
+        description: item.description ?? '',
+        eventType: String(item.eventType ?? item.type ?? 'meetup'),
+        date: item.date ?? '',
+        startTime: item.startTime ?? item.time ?? '',
+        endTime: item.endTime ?? '',
+        coverImage: item.coverImage ?? item.image ?? '',
+        photos: Array.isArray(item.photos) ? item.photos.map(String) : [],
+        price: Number(item.price ?? 0),
+        capacity,
+        bookedCount: Number(item.bookedCount ?? item.booked ?? 0),
+        cafeName: item.cafeName ?? item.cafe?.name ?? '',
+        cafeId: String(item.cafeId ?? item.cafe?.id ?? ''),
+        cafeImage: item.cafeImage ?? item.cafe?.image ?? '',
+        cafeRating: Number(item.cafeRating ?? item.cafe?.rating ?? 0),
+        location: item.location ?? item.address ?? '',
+        petTypes: Array.isArray(item.petTypes) ? item.petTypes.map(String) : [],
+        amenities: Array.isArray(item.amenities) ? item.amenities.map(String) : [],
+        requirements: Array.isArray(item.requirements) ? item.requirements.map(String) : [],
+        organizer: {
+          name: item.organizer?.name ?? '',
+          phone: item.organizer?.phone ?? '',
+        },
+        attendees: Array.isArray(item.attendees)
+          ? item.attendees.map((a: any) => ({ name: String(a.name ?? ''), avatar: String(a.avatar ?? a.image ?? '') }))
+          : [],
+      });
+    } catch (error) {
+      logger.error('Failed to load event:', error);
+      setEvent(null);
+      setLoadError(error instanceof Error ? error.message : 'Could not load this event.');
+    } finally {
+      setLoading(false);
+    }
+  }, [eventId]);
 
-  const spotsLeft = event.capacity - event.bookedCount;
+  useEffect(() => {
+    loadEvent();
+  }, [loadEvent]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={CAFE_COLOR} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadError || !event) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.centerState}>
+          <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+          <Text style={styles.centerStateText}>{loadError ?? 'Event not found.'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => { setLoading(true); loadEvent(); }}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
+            <Text style={styles.backLinkText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const spotsLeft = Math.max(0, event.capacity - event.bookedCount);
   const isSoldOut = spotsLeft <= 0;
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
     const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return dateStr;
     return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   };
 
@@ -140,8 +189,12 @@ export default function EventDetailScreen() {
     }
 
     setIsBooking(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      await eventsApi.rsvpEvent(event.id, {
+        guestCount,
+        petName: petName.trim(),
+        specialRequests: specialRequests.trim() || undefined,
+      });
       setIsBooking(false);
       setShowBookingModal(false);
       Alert.alert(
@@ -149,7 +202,14 @@ export default function EventDetailScreen() {
         `Your spot for ${event.title} has been reserved. You'll receive a confirmation message shortly.`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
-    }, 1500);
+    } catch (error) {
+      setIsBooking(false);
+      logger.error('Event booking failed:', error);
+      Alert.alert(
+        'Booking failed',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    }
   };
 
   const eventTypeIcons: Record<string, string> = {
@@ -494,6 +554,12 @@ export default function EventDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
+  centerState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  centerStateText: { fontSize: 15, color: colors.gray[500], marginTop: 12, textAlign: 'center', lineHeight: 22 },
+  retryButton: { marginTop: 16, backgroundColor: CAFE_COLOR, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
+  backLink: { marginTop: 12, paddingVertical: 8 },
+  backLinkText: { fontSize: 14, fontWeight: '600', color: CAFE_COLOR },
   heroContainer: { height: 300, position: 'relative' },
   heroImage: { width: '100%', height: '100%' },
   heroOverlay: {

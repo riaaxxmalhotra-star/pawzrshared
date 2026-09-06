@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
-import { likesApi } from '../lib/api';
+import { likesApi, swipeApi } from '../lib/api';
 import { useLocation } from '../hooks/useLocation';
 import { getDistanceString } from '../utils/distance';
 import logger from '../lib/logger';
@@ -51,122 +51,6 @@ interface Pet {
   about: string;
 }
 
-// Mock pets data with up to 6 photos each
-const mockPets: Pet[] = [
-  {
-    id: '1',
-    name: 'Bruno',
-    breed: 'Golden Retriever',
-    age: '3 years',
-    gender: 'Male',
-    photos: [
-      'https://images.unsplash.com/photo-1552053831-71594a27632d?w=400',
-      'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400',
-      'https://images.unsplash.com/photo-1561037404-61cd46aa615b?w=400',
-      'https://images.unsplash.com/photo-1558788353-f76d92427f16?w=400',
-      'https://images.unsplash.com/photo-1596492784531-6e6eb5ea9993?w=400',
-      'https://images.unsplash.com/photo-1601979031925-424e53b6caaa?w=400',
-    ],
-    owner: {
-      name: 'Rahul Kumar',
-      location: 'Koramangala, Bangalore',
-      distance: '1.2 km',
-      verified: true,
-    },
-    traits: ['Friendly', 'Playful', 'Good with kids', 'Trained'],
-    services: ['Dog Walking', 'Day Care'],
-    about: 'Bruno is a friendly Golden Retriever who loves walks in the park!',
-  },
-  {
-    id: '2',
-    name: 'Whiskers',
-    breed: 'Persian Cat',
-    age: '2 years',
-    gender: 'Female',
-    photos: [
-      'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=400',
-      'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=400',
-      'https://images.unsplash.com/photo-1495360010541-f48722b34f7d?w=400',
-      'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=400',
-    ],
-    owner: {
-      name: 'Priya Sharma',
-      location: 'Indiranagar, Bangalore',
-      distance: '0.8 km',
-      verified: true,
-    },
-    traits: ['Calm', 'Independent', 'Indoor', 'Cuddly'],
-    services: ['Pet Sitting', 'Overnight Stay'],
-    about: 'Whiskers is a calm Persian who loves cuddles.',
-  },
-  {
-    id: '3',
-    name: 'Max',
-    breed: 'Labrador',
-    age: '4 years',
-    gender: 'Male',
-    photos: [
-      'https://images.unsplash.com/photo-1605897472359-85e4b94d685a?w=400',
-      'https://images.unsplash.com/photo-1579213838942-6f6882e1c40b?w=400',
-      'https://images.unsplash.com/photo-1591769225440-811ad7d6eab3?w=400',
-      'https://images.unsplash.com/photo-1587559045816-8b0a54d12c73?w=400',
-      'https://images.unsplash.com/photo-1583511655826-05700d52f4d9?w=400',
-    ],
-    owner: {
-      name: 'Amit Patel',
-      location: 'HSR Layout, Bangalore',
-      distance: '2.5 km',
-      verified: false,
-    },
-    traits: ['Energetic', 'Loves swimming', 'Fetch lover', 'Social'],
-    services: ['Dog Walking', 'Day Care', 'Pet Meetup'],
-    about: 'Max is super energetic and loves outdoor activities!',
-  },
-  {
-    id: '4',
-    name: 'Coco',
-    breed: 'Beagle',
-    age: '1.5 years',
-    gender: 'Female',
-    photos: [
-      'https://images.unsplash.com/photo-1505628346881-b72b27e84530?w=400',
-      'https://images.unsplash.com/photo-1611003228941-98852ba62227?w=400',
-      'https://images.unsplash.com/photo-1537151625747-768eb6cf92b2?w=400',
-    ],
-    owner: {
-      name: 'Neha Gupta',
-      location: 'Whitefield, Bangalore',
-      distance: '5 km',
-      verified: true,
-    },
-    traits: ['Curious', 'Friendly', 'Good with dogs', 'Active'],
-    services: ['Dog Walking', 'Overnight Stay'],
-    about: 'Coco is a curious little beagle who loves exploring!',
-  },
-  {
-    id: '5',
-    name: 'Rocky',
-    breed: 'German Shepherd',
-    age: '5 years',
-    gender: 'Male',
-    photos: [
-      'https://images.unsplash.com/photo-1589941013453-ec89f33b5e95?w=400',
-      'https://images.unsplash.com/photo-1568572933382-74d440642117?w=400',
-      'https://images.unsplash.com/photo-1553882809-a4f57e59501d?w=400',
-      'https://images.unsplash.com/photo-1552053831-71594a27632d?w=400',
-    ],
-    owner: {
-      name: 'Vikram Singh',
-      location: 'JP Nagar, Bangalore',
-      distance: '3.2 km',
-      verified: true,
-    },
-    traits: ['Loyal', 'Protective', 'Well-trained', 'Intelligent'],
-    services: ['Day Care', 'Pet Sitting'],
-    about: 'Rocky is a loyal and well-trained German Shepherd.',
-  },
-];
-
 export default function PetMatchScreen() {
   const navigation = useNavigation<any>();
   const { location } = useLocation();
@@ -178,8 +62,76 @@ export default function PetMatchScreen() {
   const [matchedPet, setMatchedPet] = useState<Pet | null>(null);
   const [matchConversationId, setMatchConversationId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [pets, setPets] = useState<Pet[]>(mockPets);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [deckLoading, setDeckLoading] = useState(true);
+  const [deckError, setDeckError] = useState<string | null>(null);
   const [startingChat, setStartingChat] = useState(false);
+  const fetchedWithLocation = useRef(false);
+
+  const normalizeProfile = (item: any): Pet | null => {
+    const pet = item?.pet ?? item;
+    const owner = item?.owner ?? pet?.owner ?? item?.user ?? {};
+    const id = pet?.id ?? pet?._id ?? item?.id;
+    if (id === undefined || id === null) return null;
+    const photos = Array.isArray(pet?.photos) && pet.photos.length > 0
+      ? pet.photos.map(String)
+      : [item?.image ?? pet?.image ?? owner?.image ?? ''].filter(Boolean);
+    return {
+      id: String(id),
+      name: String(pet?.name ?? 'Pet'),
+      breed: String(pet?.breed ?? ''),
+      age: String(pet?.age ?? ''),
+      gender: String(pet?.gender ?? ''),
+      photos,
+      owner: {
+        id: owner?.id ?? owner?._id ? String(owner.id ?? owner._id) : undefined,
+        name: String(owner?.name ?? ''),
+        location: String(owner?.location ?? owner?.city ?? ''),
+        distance: typeof owner?.distance === 'string' ? owner.distance : undefined,
+        latitude: typeof owner?.latitude === 'number' ? owner.latitude : undefined,
+        longitude: typeof owner?.longitude === 'number' ? owner.longitude : undefined,
+        verified: Boolean(owner?.verified ?? owner?.aadhaarVerified ?? false),
+      },
+      traits: Array.isArray(pet?.traits) ? pet.traits.map(String) : [],
+      services: Array.isArray(pet?.services) ? pet.services.map(String)
+        : Array.isArray(owner?.services) ? owner.services.map(String) : [],
+      about: String(pet?.about ?? pet?.bio ?? item?.bio ?? ''),
+    };
+  };
+
+  const loadDeck = useCallback(async (lat?: number, lng?: number) => {
+    setDeckError(null);
+    try {
+      const data = await swipeApi.getProfiles(lat, lng);
+      const list = data.profiles || data.pets || data.data || data || [];
+      const cards = (Array.isArray(list) ? list : [])
+        .map(normalizeProfile)
+        .filter((p): p is Pet => p !== null);
+      setPets(cards);
+      setCurrentIndex(0);
+      setCurrentPhotoIndex(0);
+    } catch (error) {
+      logger.error('Failed to load swipe deck:', error);
+      setPets([]);
+      setDeckError(error instanceof Error ? error.message : 'Could not load pets.');
+    } finally {
+      setDeckLoading(false);
+    }
+  }, []);
+
+  // Initial deck (location may still be resolving — coordinates refine it).
+  useEffect(() => {
+    loadDeck();
+  }, [loadDeck]);
+
+  // Refetch once with real coordinates when the fix arrives.
+  useEffect(() => {
+    if (location && !fetchedWithLocation.current) {
+      fetchedWithLocation.current = true;
+      setDeckLoading(true);
+      loadDeck(location.latitude, location.longitude);
+    }
+  }, [location, loadDeck]);
 
   const position = useRef(new Animated.ValueXY()).current;
 
@@ -287,31 +239,18 @@ export default function PetMatchScreen() {
       duration: 300,
       useNativeDriver: false,
     }).start(async () => {
-      // Send like to API
+      // Send like to API — a match modal appears ONLY on a real mutual match.
       try {
-        if (pet.owner.id) {
-          const response = await likesApi.sendLike(pet.owner.id, true);
+        const targetId = pet.owner.id ?? pet.id;
+        const response = await likesApi.sendLike(targetId, true);
 
-          // Check if it's a match
-          if (response.match) {
-            setMatchedPet(pet);
-            setMatchConversationId(response.match.conversationId);
-            setShowMatchModal(true);
-          }
-        } else {
-          // Fallback to random match for demo when no owner id
-          if (Math.random() > 0.5) {
-            setMatchedPet(pet);
-            setShowMatchModal(true);
-          }
+        if (response?.match) {
+          setMatchedPet(pet);
+          setMatchConversationId(response.match.conversationId ?? null);
+          setShowMatchModal(true);
         }
       } catch (error) {
         logger.log('Failed to send like');
-        // Fallback to random match for demo
-        if (Math.random() > 0.5) {
-          setMatchedPet(pet);
-          setShowMatchModal(true);
-        }
       }
       nextCard();
       setIsProcessing(false);
@@ -345,26 +284,47 @@ export default function PetMatchScreen() {
   const currentPet = pets[currentIndex];
   const nextPet = pets[currentIndex + 1];
 
-  // Empty state - check both index AND if currentPet exists
-  if (currentIndex >= pets.length || !currentPet) {
+  const reloadDeck = () => {
+    setDeckLoading(true);
+    loadDeck(location?.latitude, location?.longitude);
+  };
+
+  // Loading / error / exhausted states
+  if (deckLoading || deckError || currentIndex >= pets.length || !currentPet) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIcon}>
-            <Ionicons name="paw" size={60} color={colors.gray[300]} />
+            <Ionicons
+              name={deckError ? 'cloud-offline-outline' : 'paw'}
+              size={60}
+              color={colors.gray[300]}
+            />
           </View>
-          <Text style={styles.emptyTitle}>No more pets nearby</Text>
-          <Text style={styles.emptyText}>Check back later for new matches!</Text>
-          <TouchableOpacity
-            style={styles.refreshBtn}
-            onPress={() => {
-              setCurrentIndex(0);
-              setCurrentPhotoIndex(0);
-            }}
-          >
-            <Ionicons name="refresh" size={20} color={colors.white} />
-            <Text style={styles.refreshBtnText}>Start Over</Text>
-          </TouchableOpacity>
+          <Text style={styles.emptyTitle}>
+            {deckLoading ? 'Finding pets near you...' : deckError ? 'Could not load pets' : 'No more pets nearby'}
+          </Text>
+          <Text style={styles.emptyText}>
+            {deckLoading
+              ? 'Fetching new profiles...'
+              : deckError ?? 'Check back later for new matches!'}
+          </Text>
+          {!deckLoading && (
+            <TouchableOpacity
+              style={styles.refreshBtn}
+              onPress={() => {
+                if (deckError) {
+                  reloadDeck();
+                } else {
+                  setCurrentIndex(0);
+                  setCurrentPhotoIndex(0);
+                }
+              }}
+            >
+              <Ionicons name="refresh" size={20} color={colors.white} />
+              <Text style={styles.refreshBtnText}>{deckError ? 'Retry' : 'Start Over'}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
     );

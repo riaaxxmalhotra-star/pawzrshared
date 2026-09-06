@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,15 @@ import {
   Image,
   RefreshControl,
   Modal,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, roleColors } from '../../theme/colors';
+import { cafesApi } from '../../lib/api';
+import logger from '../../lib/logger';
 
 // Use centralized role color
 const CAFE_COLOR = roleColors.CAFE;
@@ -44,86 +48,110 @@ export default function CafeCRMScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [offerText, setOfferText] = useState('');
+  const [acting, setActing] = useState(false);
+
+  const loadCustomers = useCallback(async (segment: CustomerSegment) => {
+    setLoadError(null);
+    try {
+      const data = await cafesApi.getCustomers(segment === 'all' ? undefined : segment);
+      const list = data.customers || data.data || data || [];
+      setCustomers(
+        (Array.isArray(list) ? list : [])
+          .map((c: any) => {
+            const id = c?.id ?? c?._id ?? c?.userId;
+            if (id === undefined || id === null) return null;
+            return {
+              id: String(id),
+              name: String(c.name ?? c.user?.name ?? 'Customer'),
+              phone: String(c.phone ?? c.user?.phone ?? ''),
+              email: c.email ?? c.user?.email,
+              avatar: c.avatar ?? c.user?.image,
+              petName: c.petName ?? c.pet?.name,
+              petType: c.petType ?? c.pet?.species,
+              totalVisits: Number(c.totalVisits ?? c.visits ?? c.totalBookings ?? 0),
+              totalSpent: Number(c.totalSpent ?? c.spent ?? 0),
+              lastVisit: typeof c.lastVisit === 'string' ? c.lastVisit.slice(0, 10)
+                : typeof c.lastVisitAt === 'string' ? c.lastVisitAt.slice(0, 10) : '',
+              segment: (['vip', 'regular', 'new', 'inactive'].includes(c.segment) ? c.segment : 'regular') as Customer['segment'],
+              notes: c.notes,
+              favoriteItems: Array.isArray(c.favoriteItems) ? c.favoriteItems.map(String) : undefined,
+              tags: Array.isArray(c.tags) ? c.tags.map(String) : undefined,
+            } as Customer;
+          })
+          .filter((c): c is Customer => c !== null)
+      );
+    } catch (error) {
+      logger.error('Failed to load customers:', error);
+      setCustomers([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load customers.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    loadCustomers(activeSegment);
+  }, [activeSegment, loadCustomers]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    loadCustomers(activeSegment);
   };
 
-  // Mock customer data
-  const customers: Customer[] = [
-    {
-      id: '1',
-      name: 'Priya Sharma',
-      phone: '+91 98765 43210',
-      email: 'priya.sharma@email.com',
-      avatar: 'https://randomuser.me/api/portraits/women/1.jpg',
-      petName: 'Bruno',
-      petType: 'Golden Retriever',
-      totalVisits: 24,
-      totalSpent: 15600,
-      lastVisit: '2025-02-10',
-      segment: 'vip',
-      notes: 'Prefers corner table, Bruno loves chicken treats',
-      favoriteItems: ['Cappuccino', 'Chicken Sandwich', 'Pup-cakes'],
-      tags: ['Birthday Club', 'Event Regular'],
-    },
-    {
-      id: '2',
-      name: 'Rahul Verma',
-      phone: '+91 87654 32109',
-      avatar: 'https://randomuser.me/api/portraits/men/2.jpg',
-      petName: 'Whiskers',
-      petType: 'Persian Cat',
-      totalVisits: 12,
-      totalSpent: 8400,
-      lastVisit: '2025-02-08',
-      segment: 'regular',
-      favoriteItems: ['Green Tea', 'Cat Treats'],
-      tags: ['Cat Parent'],
-    },
-    {
-      id: '3',
-      name: 'Anita Desai',
-      phone: '+91 76543 21098',
-      email: 'anita.d@email.com',
-      avatar: 'https://randomuser.me/api/portraits/women/3.jpg',
-      petName: 'Max',
-      petType: 'Labrador',
-      totalVisits: 8,
-      totalSpent: 4200,
-      lastVisit: '2025-02-05',
-      segment: 'regular',
-      tags: ['Weekend Regular'],
-    },
-    {
-      id: '4',
-      name: 'Vikram Singh',
-      phone: '+91 65432 10987',
-      avatar: 'https://randomuser.me/api/portraits/men/4.jpg',
-      petName: 'Cookie',
-      petType: 'Beagle',
-      totalVisits: 3,
-      totalSpent: 1800,
-      lastVisit: '2025-02-01',
-      segment: 'new',
-      tags: ['First Timer'],
-    },
-    {
-      id: '5',
-      name: 'Meera Patel',
-      phone: '+91 54321 09876',
-      avatar: 'https://randomuser.me/api/portraits/women/5.jpg',
-      petName: 'Simba',
-      petType: 'Indie Dog',
-      totalVisits: 15,
-      totalSpent: 9200,
-      lastVisit: '2024-12-15',
-      segment: 'inactive',
-      notes: 'Has not visited in 2 months',
-      tags: ['Needs Re-engagement'],
-    },
-  ];
+  const openCustomer = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setNoteText('');
+    setOfferText('');
+    setShowCustomerModal(true);
+    // Refresh detail (notes may have changed elsewhere).
+    try {
+      const data = await cafesApi.getCustomer(customer.id);
+      const item = data.customer || data || {};
+      setSelectedCustomer(prev => (prev ? { ...prev, notes: item.notes ?? prev.notes } : prev));
+    } catch {
+      // list data stands
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!selectedCustomer || !noteText.trim() || acting) return;
+    setActing(true);
+    try {
+      await cafesApi.addCustomerNote(selectedCustomer.id, noteText.trim());
+      const note = noteText.trim();
+      setSelectedCustomer(prev => (prev ? { ...prev, notes: prev.notes ? `${prev.notes}\n${note}` : note } : prev));
+      setCustomers(prev => prev.map(c => (c.id === selectedCustomer.id
+        ? { ...c, notes: c.notes ? `${c.notes}\n${note}` : note } : c)));
+      setNoteText('');
+    } catch (error) {
+      logger.error('Add note failed:', error);
+      Alert.alert('Could not save note', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const handleSendOffer = async () => {
+    if (!selectedCustomer || !offerText.trim() || acting) return;
+    setActing(true);
+    try {
+      await cafesApi.sendPromotion(selectedCustomer.id, offerText.trim());
+      setOfferText('');
+      Alert.alert('Offer sent', `Your offer was sent to ${selectedCustomer.name}.`);
+    } catch (error) {
+      logger.error('Send promotion failed:', error);
+      Alert.alert('Could not send offer', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setActing(false);
+    }
+  };
 
   const segments: { id: CustomerSegment; label: string; count: number }[] = [
     { id: 'all', label: 'All', count: customers.length },
@@ -152,14 +180,16 @@ export default function CafeCRMScreen() {
   };
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '—';
     const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return dateStr;
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   const stats = {
     totalCustomers: customers.length,
     vipCustomers: customers.filter(c => c.segment === 'vip').length,
-    avgSpent: Math.round(customers.reduce((sum, c) => sum + c.totalSpent, 0) / customers.length),
+    avgSpent: customers.length === 0 ? 0 : Math.round(customers.reduce((sum, c) => sum + c.totalSpent, 0) / customers.length),
     totalRevenue: customers.reduce((sum, c) => sum + c.totalSpent, 0),
   };
 
@@ -257,7 +287,23 @@ export default function CafeCRMScreen() {
 
         {/* Customer List */}
         <View style={styles.customerList}>
-          {filteredCustomers.length === 0 ? (
+          {loading ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="large" color={CAFE_COLOR} />
+              <Text style={styles.emptyText}>Loading customers...</Text>
+            </View>
+          ) : loadError ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+              <Text style={styles.emptyText}>{loadError}</Text>
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: CAFE_COLOR, marginTop: 16, paddingHorizontal: 24 }]}
+                onPress={() => { setLoading(true); loadCustomers(activeSegment); }}
+              >
+                <Text style={styles.actionButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : filteredCustomers.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="people-outline" size={48} color={colors.gray[300]} />
               <Text style={styles.emptyText}>No customers found</Text>
@@ -267,10 +313,7 @@ export default function CafeCRMScreen() {
               <TouchableOpacity
                 key={customer.id}
                 style={styles.customerCard}
-                onPress={() => {
-                  setSelectedCustomer(customer);
-                  setShowCustomerModal(true);
-                }}
+                onPress={() => openCustomer(customer)}
               >
                 <View style={styles.customerHeader}>
                   {customer.avatar ? (
@@ -436,25 +479,60 @@ export default function CafeCRMScreen() {
               )}
 
               {/* Notes */}
-              {selectedCustomer.notes && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Notes</Text>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Notes</Text>
+                {!!selectedCustomer.notes && (
                   <View style={styles.notesCard}>
                     <Text style={styles.notesText}>{selectedCustomer.notes}</Text>
                   </View>
+                )}
+                <View style={styles.composerRow}>
+                  <TextInput
+                    style={styles.composerInput}
+                    placeholder="Add a note about this customer..."
+                    placeholderTextColor={colors.gray[400]}
+                    value={noteText}
+                    onChangeText={setNoteText}
+                    multiline
+                  />
+                  <TouchableOpacity
+                    style={[styles.composerButton, { backgroundColor: CAFE_COLOR }, acting && styles.composerButtonDisabled]}
+                    onPress={handleAddNote}
+                    disabled={acting || !noteText.trim()}
+                  >
+                    {acting ? (
+                      <ActivityIndicator size="small" color={colors.white} />
+                    ) : (
+                      <Ionicons name="add" size={20} color={colors.white} />
+                    )}
+                  </TouchableOpacity>
                 </View>
-              )}
+              </View>
 
-              {/* Action Buttons */}
-              <View style={styles.actionButtons}>
-                <TouchableOpacity style={[styles.actionButton, { backgroundColor: CAFE_COLOR }]}>
-                  <Ionicons name="chatbubble-outline" size={20} color={colors.white} />
-                  <Text style={styles.actionButtonText}>Send Message</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionButton, styles.actionButtonOutline]}>
-                  <Ionicons name="gift-outline" size={20} color={CAFE_COLOR} />
-                  <Text style={[styles.actionButtonText, { color: CAFE_COLOR }]}>Send Offer</Text>
-                </TouchableOpacity>
+              {/* Promotion */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Send Offer</Text>
+                <View style={styles.composerRow}>
+                  <TextInput
+                    style={styles.composerInput}
+                    placeholder="e.g. 20% off this weekend..."
+                    placeholderTextColor={colors.gray[400]}
+                    value={offerText}
+                    onChangeText={setOfferText}
+                    multiline
+                  />
+                  <TouchableOpacity
+                    style={[styles.composerButton, { backgroundColor: CAFE_COLOR }, acting && styles.composerButtonDisabled]}
+                    onPress={handleSendOffer}
+                    disabled={acting || !offerText.trim()}
+                  >
+                    {acting ? (
+                      <ActivityIndicator size="small" color={colors.white} />
+                    ) : (
+                      <Ionicons name="send" size={18} color={colors.white} />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
           </SafeAreaView>
@@ -636,6 +714,27 @@ const styles = StyleSheet.create({
     borderLeftColor: CAFE_COLOR,
   },
   notesText: { fontSize: 14, color: colors.gray[700], lineHeight: 20 },
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 12, gap: 8 },
+  composerInput: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.gray[200],
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.gray[900],
+    maxHeight: 90,
+  },
+  composerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  composerButtonDisabled: { opacity: 0.5 },
   actionButtons: { flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 24 },
   actionButton: {
     flex: 1,

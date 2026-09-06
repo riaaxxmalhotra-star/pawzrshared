@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
-import { likesApi } from '../lib/api';
+import { likesApi, swipeApi } from '../lib/api';
 import { useLocation } from '../hooks/useLocation';
 import logger from '../lib/logger';
 import { getDistanceString } from '../utils/distance';
@@ -50,94 +50,6 @@ interface PetLover {
   experience: string;
   prompts?: { prompt: string; answer: string }[];
 }
-
-// Mock pet lovers data
-const mockLovers: PetLover[] = [
-  {
-    id: '1',
-    name: 'Priya',
-    age: 25,
-    photos: [
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400',
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-      'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400',
-      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400',
-    ],
-    distance: '0.8 km',
-    rating: 4.9,
-    reviews: 47,
-    verified: true,
-    bio: 'Animal lover with 3 years experience caring for pets. Your furry friends are in safe hands!',
-    services: ['Dog Walking', 'Pet Sitting', 'Day Care'],
-    experience: 'Expert',
-    prompts: [
-      { prompt: 'My ideal Saturday with a pet involves...', answer: 'Long walks in the park followed by cuddle time!' },
-      { prompt: 'The way to my heart is through...', answer: 'A wagging tail and wet nose kisses' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Rahul',
-    age: 28,
-    photos: [
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400',
-      'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400',
-    ],
-    distance: '1.2 km',
-    rating: 4.8,
-    reviews: 32,
-    verified: true,
-    bio: 'Dog dad to 2 golden retrievers. I treat every pet like my own family member.',
-    services: ['Day Care', 'Overnight Stay', 'Dog Walking'],
-    experience: 'Expert',
-    prompts: [
-      { prompt: 'My hidden talent with animals is...', answer: 'I can calm any anxious pet within minutes!' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Anita',
-    age: 32,
-    photos: [
-      'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400',
-      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400',
-      'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400',
-      'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=400',
-      'https://images.unsplash.com/photo-1502685104226-ee32379fefbe?w=400',
-    ],
-    distance: '1.5 km',
-    rating: 5.0,
-    reviews: 89,
-    verified: true,
-    bio: 'Professional pet sitter certified in pet first aid. Specialized in senior pets and special needs.',
-    services: ['Pet Sitting', 'Grooming', 'Medical Care'],
-    experience: 'Professional',
-    prompts: [
-      { prompt: 'If I were a pet, I would be a...', answer: 'A loyal golden retriever - always happy to see you!' },
-      { prompt: 'My pet care philosophy is...', answer: 'Every pet deserves love, patience, and the best care possible' },
-    ],
-  },
-  {
-    id: '4',
-    name: 'Vikram',
-    age: 24,
-    photos: [
-      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400',
-      'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400',
-    ],
-    distance: '2.1 km',
-    rating: 4.7,
-    reviews: 21,
-    verified: false,
-    bio: 'Active runner looking to walk your dogs! Great with high-energy breeds.',
-    services: ['Dog Walking', 'Pet Meetup', 'Training'],
-    experience: 'Intermediate',
-    prompts: [
-      { prompt: 'The most spontaneous thing I have done for a pet...', answer: 'Drove 3 hours to rescue a stray!' },
-    ],
-  },
-];
 
 // Confetti Particle Component
 interface ConfettiParticle {
@@ -205,8 +117,72 @@ export default function LoverMatchScreen() {
   const [matchedLover, setMatchedLover] = useState<PetLover | null>(null);
   const [matchConversationId, setMatchConversationId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [lovers] = useState<PetLover[]>(mockLovers);
+  const [lovers, setLovers] = useState<PetLover[]>([]);
+  const [deckLoading, setDeckLoading] = useState(true);
+  const [deckError, setDeckError] = useState<string | null>(null);
   const [startingChat, setStartingChat] = useState(false);
+  const fetchedWithLocation = useRef(false);
+
+  const normalizeProfile = (item: any): PetLover | null => {
+    const lover = item?.lover ?? item?.user ?? item;
+    const id = lover?.id ?? lover?._id ?? item?.id;
+    if (id === undefined || id === null) return null;
+    const photos = Array.isArray(lover?.photos) && lover.photos.length > 0
+      ? lover.photos.map(String)
+      : [lover?.image ?? lover?.photo ?? ''].filter(Boolean);
+    return {
+      id: String(id),
+      name: String(lover?.name ?? 'Pet Lover'),
+      age: Number(lover?.age ?? 0),
+      photos,
+      distance: typeof lover?.distance === 'string' ? lover.distance : undefined,
+      latitude: typeof lover?.latitude === 'number' ? lover.latitude
+        : typeof lover?.location?.lat === 'number' ? lover.location.lat : undefined,
+      longitude: typeof lover?.longitude === 'number' ? lover.longitude
+        : typeof lover?.location?.lng === 'number' ? lover.location.lng : undefined,
+      rating: Number(lover?.rating ?? lover?.averageRating ?? 0),
+      reviews: Number(lover?.reviews ?? lover?.reviewCount ?? 0),
+      verified: Boolean(lover?.verified ?? lover?.aadhaarVerified ?? false),
+      bio: String(lover?.bio ?? lover?.about ?? ''),
+      services: Array.isArray(lover?.services) ? lover.services.map(String) : [],
+      experience: String(lover?.experience ?? ''),
+      prompts: Array.isArray(lover?.prompts)
+        ? lover.prompts.map((p: any) => ({ prompt: String(p.prompt ?? ''), answer: String(p.answer ?? '') }))
+        : undefined,
+    };
+  };
+
+  const loadDeck = useCallback(async (lat?: number, lng?: number) => {
+    setDeckError(null);
+    try {
+      const data = await swipeApi.getProfiles(lat, lng);
+      const list = data.profiles || data.lovers || data.data || data || [];
+      const cards = (Array.isArray(list) ? list : [])
+        .map(normalizeProfile)
+        .filter((l): l is PetLover => l !== null);
+      setLovers(cards);
+      setCurrentIndex(0);
+      setCurrentPhotoIndex(0);
+    } catch (error) {
+      logger.error('Failed to load swipe deck:', error);
+      setLovers([]);
+      setDeckError(error instanceof Error ? error.message : 'Could not load profiles.');
+    } finally {
+      setDeckLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDeck();
+  }, [loadDeck]);
+
+  useEffect(() => {
+    if (location && !fetchedWithLocation.current) {
+      fetchedWithLocation.current = true;
+      setDeckLoading(true);
+      loadDeck(location.latitude, location.longitude);
+    }
+  }, [location, loadDeck]);
 
 
   // Match modal animation values
@@ -471,23 +447,17 @@ export default function LoverMatchScreen() {
       duration: 300,
       useNativeDriver: false,
     }).start(async () => {
-      // Send like to API
+      // Send like to API — a match modal appears ONLY on a real mutual match.
       try {
         const response = await likesApi.sendLike(lover.id, true);
 
-        // Check if it's a match
-        if (response.match) {
+        if (response?.match) {
           setMatchedLover(lover);
-          setMatchConversationId(response.match.conversationId);
+          setMatchConversationId(response.match.conversationId ?? null);
           setShowMatchModal(true);
         }
       } catch (error) {
         logger.log('Failed to send like:', error);
-        // Fallback to random match for demo
-        if (Math.random() > 0.5) {
-          setMatchedLover(lover);
-          setShowMatchModal(true);
-        }
       }
       nextCard();
       setIsProcessing(false);
@@ -521,26 +491,45 @@ export default function LoverMatchScreen() {
   const currentLover = lovers[currentIndex];
   const nextLover = lovers[currentIndex + 1];
 
-  // Empty state - check both index AND if currentLover exists
-  if (currentIndex >= lovers.length || !currentLover) {
+  const reloadDeck = () => {
+    setDeckLoading(true);
+    loadDeck(location?.latitude, location?.longitude);
+  };
+
+  // Loading / error / exhausted states
+  if (deckLoading || deckError || currentIndex >= lovers.length || !currentLover) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIcon}>
-            <Ionicons name="heart" size={60} color={colors.gray[300]} />
+            <Ionicons
+              name={deckError ? 'cloud-offline-outline' : 'heart'}
+              size={60}
+              color={colors.gray[300]}
+            />
           </View>
-          <Text style={styles.emptyTitle}>No more pet lovers nearby</Text>
-          <Text style={styles.emptyText}>Check back later for new matches!</Text>
-          <TouchableOpacity
-            style={styles.refreshBtn}
-            onPress={() => {
-              setCurrentIndex(0);
-              setCurrentPhotoIndex(0);
-            }}
-          >
-            <Ionicons name="refresh" size={20} color={colors.white} />
-            <Text style={styles.refreshBtnText}>Start Over</Text>
-          </TouchableOpacity>
+          <Text style={styles.emptyTitle}>
+            {deckLoading ? 'Finding pet lovers...' : deckError ? 'Could not load profiles' : 'No more pet lovers nearby'}
+          </Text>
+          <Text style={styles.emptyText}>
+            {deckLoading ? 'Fetching new profiles...' : deckError ?? 'Check back later for new matches!'}
+          </Text>
+          {!deckLoading && (
+            <TouchableOpacity
+              style={styles.refreshBtn}
+              onPress={() => {
+                if (deckError) {
+                  reloadDeck();
+                } else {
+                  setCurrentIndex(0);
+                  setCurrentPhotoIndex(0);
+                }
+              }}
+            >
+              <Ionicons name="refresh" size={20} color={colors.white} />
+              <Text style={styles.refreshBtnText}>{deckError ? 'Retry' : 'Start Over'}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
     );

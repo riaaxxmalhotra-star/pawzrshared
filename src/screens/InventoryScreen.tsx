@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,15 @@ import {
   RefreshControl,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import { productsApi } from '../lib/api';
+import logger from '../lib/logger';
 
 interface Product {
   id: string;
@@ -26,63 +29,13 @@ interface Product {
   status: 'active' | 'low_stock' | 'out_of_stock';
 }
 
-// Mock inventory data
-const mockInventory: Product[] = [
-  {
-    id: '1',
-    name: 'Premium Dog Food 5kg',
-    category: 'Pet Food',
-    price: 1200,
-    stock: 25,
-    image: 'https://images.unsplash.com/photo-1568640347023-a616a30bc3bd?w=200',
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'Cat Litter 10kg',
-    category: 'Pet Food',
-    price: 800,
-    stock: 5,
-    image: 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=200',
-    status: 'low_stock',
-  },
-  {
-    id: '3',
-    name: 'Chew Toys Set',
-    category: 'Toys',
-    price: 450,
-    stock: 0,
-    image: 'https://images.unsplash.com/photo-1591946614720-90a587da4a36?w=200',
-    status: 'out_of_stock',
-  },
-  {
-    id: '4',
-    name: 'Pet Grooming Kit',
-    category: 'Grooming',
-    price: 1500,
-    stock: 12,
-    image: 'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?w=200',
-    status: 'active',
-  },
-  {
-    id: '5',
-    name: 'Dog Bed Large',
-    category: 'Beds & Furniture',
-    price: 2500,
-    stock: 8,
-    image: 'https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?w=200',
-    status: 'active',
-  },
-  {
-    id: '6',
-    name: 'Pet Shampoo 500ml',
-    category: 'Grooming',
-    price: 350,
-    stock: 3,
-    image: 'https://images.unsplash.com/photo-1584305574647-0cc949a2bb9f?w=200',
-    status: 'low_stock',
-  },
-];
+// Stock bands are derived client-side so the screen works even when the
+// backend only returns raw stock counts.
+function statusForStock(stock: number): Product['status'] {
+  if (stock <= 0) return 'out_of_stock';
+  if (stock <= 5) return 'low_stock';
+  return 'active';
+}
 
 export default function InventoryScreen() {
   const navigation = useNavigation<any>();
@@ -92,15 +45,56 @@ export default function InventoryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [editStock, setEditStock] = useState('');
+  const [inventory, setInventory] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [savingStock, setSavingStock] = useState(false);
+
+  const loadInventory = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await productsApi.getMyProducts();
+      const list = data.products || data.data || data || [];
+      setInventory(
+        (Array.isArray(list) ? list : [])
+          .map((p: any) => {
+            const id = p?.id ?? p?._id;
+            if (id === undefined || id === null) return null;
+            const stock = Number(p.stock ?? p.quantity ?? 0);
+            return {
+              id: String(id),
+              name: String(p.name ?? 'Product'),
+              category: String(p.category ?? ''),
+              price: Number(p.price ?? 0),
+              stock,
+              image: p.image ?? p.photos?.[0],
+              status: statusForStock(stock),
+            } as Product;
+          })
+          .filter((p): p is Product => p !== null)
+      );
+    } catch (error) {
+      logger.error('Failed to load inventory:', error);
+      setInventory([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load inventory.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInventory();
+  }, [loadInventory]);
 
   const tabs: { key: 'all' | 'active' | 'low_stock' | 'out_of_stock'; label: string; count: number }[] = [
-    { key: 'all', label: 'All', count: mockInventory.length },
-    { key: 'active', label: 'In Stock', count: mockInventory.filter(p => p.status === 'active').length },
-    { key: 'low_stock', label: 'Low Stock', count: mockInventory.filter(p => p.status === 'low_stock').length },
-    { key: 'out_of_stock', label: 'Out of Stock', count: mockInventory.filter(p => p.status === 'out_of_stock').length },
+    { key: 'all', label: 'All', count: inventory.length },
+    { key: 'active', label: 'In Stock', count: inventory.filter(p => p.status === 'active').length },
+    { key: 'low_stock', label: 'Low Stock', count: inventory.filter(p => p.status === 'low_stock').length },
+    { key: 'out_of_stock', label: 'Out of Stock', count: inventory.filter(p => p.status === 'out_of_stock').length },
   ];
 
-  const filteredProducts = mockInventory
+  const filteredProducts = inventory
     .filter(p => selectedTab === 'all' || p.status === selectedTab)
     .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -115,26 +109,67 @@ export default function InventoryScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
+    loadInventory();
   };
 
-  const handleUpdateStock = (productId: string) => {
-    const newStock = parseInt(editStock);
+  const handleUpdateStock = async (productId: string) => {
+    const newStock = parseInt(editStock, 10);
     if (isNaN(newStock) || newStock < 0) {
       Alert.alert('Invalid', 'Please enter a valid stock quantity');
       return;
     }
-    Alert.alert('Success', `Stock updated to ${newStock}`);
-    setEditingProduct(null);
-    setEditStock('');
+    setSavingStock(true);
+    try {
+      await productsApi.updateProduct(productId, { stock: newStock });
+      setInventory(prev =>
+        prev.map(p => (p.id === productId ? { ...p, stock: newStock, status: statusForStock(newStock) } : p))
+      );
+      Alert.alert('Success', `Stock updated to ${newStock}`);
+      setEditingProduct(null);
+      setEditStock('');
+    } catch (error) {
+      logger.error('Stock update failed:', error);
+      Alert.alert('Update failed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSavingStock(false);
+    }
   };
 
   const stats = {
-    totalProducts: mockInventory.length,
-    lowStock: mockInventory.filter(p => p.status === 'low_stock').length,
-    outOfStock: mockInventory.filter(p => p.status === 'out_of_stock').length,
-    totalValue: mockInventory.reduce((sum, p) => sum + (p.price * p.stock), 0),
+    totalProducts: inventory.length,
+    lowStock: inventory.filter(p => p.status === 'low_stock').length,
+    outOfStock: inventory.filter(p => p.status === 'out_of_stock').length,
+    totalValue: inventory.reduce((sum, p) => sum + (p.price * p.stock), 0),
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.centerStateText}>Loading inventory...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.centerState}>
+          <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+          <Text style={styles.centerStateTitle}>Could not load inventory</Text>
+          <Text style={styles.centerStateText}>{loadError}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => { setLoading(true); loadInventory(); }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -264,10 +299,15 @@ export default function InventoryScreen() {
                         placeholder="Qty"
                       />
                       <TouchableOpacity
-                        style={styles.saveStockBtn}
+                        style={[styles.saveStockBtn, savingStock && styles.saveStockBtnDisabled]}
                         onPress={() => handleUpdateStock(product.id)}
+                        disabled={savingStock}
                       >
-                        <Ionicons name="checkmark" size={18} color="#fff" />
+                        {savingStock ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Ionicons name="checkmark" size={18} color="#fff" />
+                        )}
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.cancelStockBtn}
@@ -332,6 +372,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  centerState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  centerStateTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.gray[800],
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  centerStateText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -528,6 +600,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  saveStockBtnDisabled: {
+    opacity: 0.6,
   },
   cancelStockBtn: {
     width: 32,

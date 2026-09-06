@@ -6,9 +6,16 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from './src/lib/auth';
 import AppNavigator from './src/navigation/AppNavigator';
+import { navigateFromNotification } from './src/navigation/navigationRef';
 import { initSentry, captureError, Sentry } from './src/lib/sentry';
 import { validateEnv } from './src/config/env';
-import { registerForPushNotifications, addNotificationResponseListener } from './src/lib/notifications';
+import {
+  registerForPushNotifications,
+  addNotificationResponseListener,
+  getLaunchNotificationResponse,
+  setBadgeCount,
+} from './src/lib/notifications';
+import logger from './src/lib/logger';
 
 // Fail loudly (never silently) when required env is missing or placeholder.
 // Non-blocking: the app still renders; Google sign-in will keep failing until fixed.
@@ -126,12 +133,32 @@ function App() {
     // Register for push notifications
     registerForPushNotifications().catch(() => {});
 
-    // Handle notification taps
+    // Route notification taps to the right screen (previously just logged).
     const subscription = addNotificationResponseListener((response) => {
-      const data = response.notification.request.content.data;
-      // Navigation to specific screens based on notification type can be handled here
-      console.log('Notification tapped:', data);
+      try {
+        const data = response.notification.request.content.data as Record<string, any>;
+        setBadgeCount(0).catch(() => {});
+        navigateFromNotification(data);
+      } catch (error) {
+        logger.log('Notification routing failed');
+      }
     });
+
+    // Cold-start tap: the notification that launched the app (navigation may
+    // not be ready yet, so retry briefly).
+    let cancelled = false;
+    getLaunchNotificationResponse()
+      .then((response) => {
+        if (cancelled || !response) return;
+        const data = response.notification.request.content.data as Record<string, any>;
+        let attempts = 0;
+        const timer = setInterval(() => {
+          attempts += 1;
+          navigateFromNotification(data);
+          if (attempts >= 10) clearInterval(timer);
+        }, 500);
+      })
+      .catch(() => {});
 
     // Small delay then show app - no blocking operations
     const timer = setTimeout(() => {
@@ -139,6 +166,7 @@ function App() {
     }, 100);
 
     return () => {
+      cancelled = true;
       clearTimeout(timer);
       subscription.remove();
     };

@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../../theme/colors';
+import { eventsApi } from '../../lib/api';
+import logger from '../../lib/logger';
 
 const CAFE_COLOR = '#14B8A6';
 
@@ -109,20 +111,44 @@ export default function CreateEventScreen() {
   };
 
   const handleCreate = async () => {
-    if (!title || !eventType || !date || !startTime || !capacity) {
+    if (!title.trim() || !eventType || !date.trim() || !startTime.trim() || !capacity.trim()) {
       Alert.alert('Missing Information', 'Please fill in all required fields');
+      return;
+    }
+    const capacityNum = parseInt(capacity, 10);
+    if (Number.isNaN(capacityNum) || capacityNum <= 0) {
+      Alert.alert('Invalid capacity', 'Please enter a valid number of spots.');
+      return;
+    }
+    const priceNum = isFree ? 0 : parseFloat(price || '0');
+    if (Number.isNaN(priceNum) || priceNum < 0) {
+      Alert.alert('Invalid price', 'Please enter a valid price or mark the event as free.');
       return;
     }
 
     setIsLoading(true);
     try {
-      // TODO: API call to create event
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await eventsApi.createEvent({
+        title: title.trim(),
+        description: description.trim(),
+        eventType,
+        date: date.trim(),
+        startTime: startTime.trim(),
+        endTime: endTime.trim(),
+        coverImage: coverImage || undefined,
+        price: priceNum,
+        capacity: capacityNum,
+        petTypes: allowedPets,
+        amenities,
+        requirements: requirements.trim() ? [requirements.trim()] : [],
+        status: 'upcoming',
+      });
       Alert.alert('Success', 'Event created successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);
     } catch (error) {
-      Alert.alert('Error', 'Failed to create event. Please try again.');
+      logger.error('Event creation failed:', error);
+      Alert.alert('Creation failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setIsLoading(false);
     }

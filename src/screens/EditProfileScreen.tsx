@@ -18,6 +18,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import { profileApi } from '../lib/api';
 import logger from '../lib/logger';
 
 export default function EditProfileScreen() {
@@ -101,6 +102,25 @@ export default function EditProfileScreen() {
         city: city.trim(),
         state: state.trim(),
       });
+      // Sync to the backend (best-effort — the local profile is the source
+      // of truth when offline, and the user is told when sync fails).
+      try {
+        await profileApi.updateProfile({
+          name: name.trim(),
+          phone: phone.trim(),
+          address: addressLine1.trim(),
+          city: city.trim(),
+          zipCode: pincode.trim(),
+          bio: bio.trim(),
+        });
+      } catch (syncError) {
+        logger.error('Profile server sync failed:', syncError);
+        Alert.alert(
+          'Saved on this device',
+          'Your profile was saved locally, but server sync failed. It will retry next time you edit.'
+        );
+        return;
+      }
       Alert.alert('Success', 'Profile updated successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);

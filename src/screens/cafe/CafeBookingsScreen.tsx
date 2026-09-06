@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,19 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, roleColors } from '../../theme/colors';
+import { cafesApi, canTransitionBooking } from '../../lib/api';
+import logger from '../../lib/logger';
 
 // Use centralized role color
 const CAFE_COLOR = roleColors.CAFE;
 
-type BookingStatus = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
+type BookingTab = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
 interface Booking {
   id: string;
@@ -34,82 +38,68 @@ interface Booking {
 }
 
 export default function CafeBookingsScreen() {
-  const [activeTab, setActiveTab] = useState<BookingStatus>('pending');
+  const [activeTab, setActiveTab] = useState<BookingTab>('pending');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [acting, setActing] = useState(false);
+
+  const loadBookings = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await cafesApi.getMyBookings();
+      const list = data.bookings || data.data || data || [];
+      setBookings(
+        (Array.isArray(list) ? list : [])
+          .map((b: any) => {
+            const id = b?.id ?? b?._id;
+            if (id === undefined || id === null) return null;
+            return {
+              id: String(id),
+              customerName: b.customerName ?? b.user?.name ?? b.customer?.name ?? 'Customer',
+              customerPhone: b.customerPhone ?? b.user?.phone ?? b.customer?.phone ?? '',
+              petName: b.petName ?? b.pet?.name,
+              eventId: b.eventId ? String(b.eventId) : undefined,
+              eventTitle: b.eventTitle ?? b.event?.title,
+              date: typeof b.date === 'string' ? b.date.slice(0, 10) : '',
+              time: b.time ?? '',
+              partySize: Number(b.partySize ?? b.guestCount ?? 1),
+              status: b.status ?? 'pending',
+              specialRequests: b.specialRequests,
+              totalAmount: Number(b.totalAmount ?? b.amount ?? b.price ?? 0),
+              createdAt: b.createdAt ?? '',
+            } as Booking;
+          })
+          .filter((b): b is Booking => b !== null)
+      );
+    } catch (error) {
+      logger.error('Failed to load cafe bookings:', error);
+      setBookings([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load bookings.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBookings();
+  }, [loadBookings]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    loadBookings();
   };
 
-  // Mock data
-  const bookings: Booking[] = [
-    {
-      id: '1',
-      customerName: 'Priya Sharma',
-      customerPhone: '+91 98765 43210',
-      petName: 'Bruno',
-      date: '2025-02-15',
-      time: '2:00 PM',
-      partySize: 4,
-      status: 'pending',
-      specialRequests: 'Window seat preferred, celebrating pet birthday',
-      totalAmount: 1200,
-      createdAt: '2025-02-13T10:30:00',
-    },
-    {
-      id: '2',
-      customerName: 'Rahul Verma',
-      customerPhone: '+91 98765 43211',
-      petName: 'Max',
-      eventId: '1',
-      eventTitle: 'Sunday Pet Meetup',
-      date: '2025-02-16',
-      time: '3:00 PM',
-      partySize: 2,
-      status: 'confirmed',
-      totalAmount: 598,
-      createdAt: '2025-02-12T14:20:00',
-    },
-    {
-      id: '3',
-      customerName: 'Anita Desai',
-      customerPhone: '+91 98765 43212',
-      date: '2025-02-15',
-      time: '5:00 PM',
-      partySize: 6,
-      status: 'confirmed',
-      totalAmount: 1800,
-      createdAt: '2025-02-11T09:15:00',
-    },
-    {
-      id: '4',
-      customerName: 'Vikram Singh',
-      customerPhone: '+91 98765 43213',
-      petName: 'Lucky',
-      date: '2025-02-14',
-      time: '1:00 PM',
-      partySize: 3,
-      status: 'completed',
-      totalAmount: 900,
-      createdAt: '2025-02-10T16:45:00',
-    },
-    {
-      id: '5',
-      customerName: 'Neha Gupta',
-      customerPhone: '+91 98765 43214',
-      date: '2025-02-13',
-      time: '4:00 PM',
-      partySize: 2,
-      status: 'cancelled',
-      totalAmount: 600,
-      createdAt: '2025-02-09T11:00:00',
-    },
-  ];
+  const todayKey = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+  })();
 
-  const tabs: { id: BookingStatus; label: string; count: number }[] = [
+  const tabs: { id: BookingTab; label: string; count: number }[] = [
     { id: 'pending', label: 'Pending', count: bookings.filter(b => b.status === 'pending').length },
     { id: 'confirmed', label: 'Confirmed', count: bookings.filter(b => b.status === 'confirmed').length },
     { id: 'completed', label: 'Completed', count: bookings.filter(b => b.status === 'completed').length },
@@ -119,7 +109,9 @@ export default function CafeBookingsScreen() {
   const filteredBookings = bookings.filter(b => activeTab === 'all' || b.status === activeTab);
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '—';
     const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return dateStr;
     return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
@@ -133,10 +125,29 @@ export default function CafeBookingsScreen() {
     }
   };
 
-  const handleAction = (action: 'confirm' | 'cancel' | 'complete') => {
-    // TODO: API call
-    setModalVisible(false);
-    setSelectedBooking(null);
+  const handleAction = async (action: 'confirm' | 'cancel' | 'complete', target?: Booking) => {
+    const booking = target ?? selectedBooking;
+    if (!booking || acting) return;
+    const nextStatus = action === 'confirm' ? 'confirmed' : action === 'cancel' ? 'cancelled' : 'completed';
+    if (!canTransitionBooking(booking.status, nextStatus)) {
+      Alert.alert('Invalid action', `A ${booking.status} booking cannot be marked ${nextStatus}.`);
+      return;
+    }
+    setActing(true);
+    try {
+      await cafesApi.updateBookingStatus(booking.id, nextStatus);
+      setBookings(prev => prev.map(b => (b.id === booking.id ? { ...b, status: nextStatus } : b)));
+      setSelectedBooking(prev => (prev && prev.id === booking.id ? { ...prev, status: nextStatus } : prev));
+      if (!target) {
+        setModalVisible(false);
+        setSelectedBooking(null);
+      }
+    } catch (error) {
+      logger.error('Booking status update failed:', error);
+      Alert.alert('Update failed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setActing(false);
+    }
   };
 
   const openBookingDetail = (booking: Booking) => {
@@ -150,7 +161,7 @@ export default function CafeBookingsScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Bookings</Text>
         <View style={styles.todayBadge}>
-          <Text style={styles.todayText}>Today: {bookings.filter(b => b.date === '2025-02-15').length}</Text>
+          <Text style={styles.todayText}>Today: {bookings.filter(b => b.date === todayKey).length}</Text>
         </View>
       </View>
 
@@ -184,7 +195,25 @@ export default function CafeBookingsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={CAFE_COLOR} />}
         contentContainerStyle={styles.listContainer}
       >
-        {filteredBookings.length === 0 ? (
+        {loading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color={CAFE_COLOR} />
+          </View>
+        ) : loadError ? (
+          <View style={styles.emptyState}>
+            <View style={[styles.emptyIcon, { backgroundColor: '#FEF3C7' }]}>
+              <Ionicons name="cloud-offline-outline" size={48} color="#B45309" />
+            </View>
+            <Text style={styles.emptyTitle}>Could not load bookings</Text>
+            <Text style={styles.emptySubtitle}>{loadError}</Text>
+            <TouchableOpacity
+              style={[styles.modalActionBtn, { backgroundColor: CAFE_COLOR, marginTop: 16, paddingHorizontal: 32 }]}
+              onPress={() => { setLoading(true); loadBookings(); }}
+            >
+              <Text style={styles.modalActionBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : filteredBookings.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={[styles.emptyIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
               <Ionicons name="book-outline" size={48} color={CAFE_COLOR} />
@@ -245,13 +274,15 @@ export default function CafeBookingsScreen() {
                   <View style={styles.quickActions}>
                     <TouchableOpacity
                       style={[styles.quickActionBtn, { backgroundColor: '#10B98115' }]}
-                      onPress={() => handleAction('confirm')}
+                      onPress={() => handleAction('confirm', booking)}
+                      disabled={acting}
                     >
                       <Ionicons name="checkmark" size={18} color="#10B981" />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.quickActionBtn, { backgroundColor: '#EF444415' }]}
-                      onPress={() => handleAction('cancel')}
+                      onPress={() => handleAction('cancel', booking)}
+                      disabled={acting}
                     >
                       <Ionicons name="close" size={18} color="#EF4444" />
                     </TouchableOpacity>
@@ -265,7 +296,12 @@ export default function CafeBookingsScreen() {
       </ScrollView>
 
       {/* Booking Detail Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
@@ -326,14 +362,16 @@ export default function CafeBookingsScreen() {
                       <TouchableOpacity
                         style={[styles.modalActionBtn, { backgroundColor: '#EF4444' }]}
                         onPress={() => handleAction('cancel')}
+                        disabled={acting}
                       >
-                        <Text style={styles.modalActionBtnText}>Decline</Text>
+                        <Text style={styles.modalActionBtnText}>{acting ? 'Working...' : 'Decline'}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.modalActionBtn, { backgroundColor: '#10B981' }]}
                         onPress={() => handleAction('confirm')}
+                        disabled={acting}
                       >
-                        <Text style={styles.modalActionBtnText}>Confirm</Text>
+                        <Text style={styles.modalActionBtnText}>{acting ? 'Working...' : 'Confirm'}</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -342,8 +380,9 @@ export default function CafeBookingsScreen() {
                     <TouchableOpacity
                       style={[styles.modalActionBtn, { backgroundColor: CAFE_COLOR, marginTop: 16 }]}
                       onPress={() => handleAction('complete')}
+                      disabled={acting}
                     >
-                      <Text style={styles.modalActionBtnText}>Mark as Completed</Text>
+                      <Text style={styles.modalActionBtnText}>{acting ? 'Working...' : 'Mark as Completed'}</Text>
                     </TouchableOpacity>
                   )}
                 </ScrollView>

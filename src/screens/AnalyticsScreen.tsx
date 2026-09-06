@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,28 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import { bookingsApi } from '../lib/api';
+import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
+
+interface BookingRecord {
+  dateMs: number | null;
+  status: string;
+  revenue: number;
+  customerId: string;
+  service: string;
+}
+
+const PERIOD_DAYS = { week: 7, month: 30, year: 365 } as const;
 
 export default function AnalyticsScreen() {
   const navigation = useNavigation<any>();
@@ -38,71 +52,115 @@ export default function AnalyticsScreen() {
 
   const config = getRoleConfig();
 
-  // Mock analytics data
-  const analyticsData = {
-    week: {
-      totalBookings: 12,
-      completedBookings: 10,
-      cancelledBookings: 2,
-      revenue: 8500,
-      avgRating: 4.8,
-      newClients: 3,
-      repeatClients: 7,
-    },
-    month: {
-      totalBookings: 48,
-      completedBookings: 42,
-      cancelledBookings: 6,
-      revenue: 35600,
-      avgRating: 4.9,
-      newClients: 12,
-      repeatClients: 30,
-    },
-    year: {
-      totalBookings: 520,
-      completedBookings: 485,
-      cancelledBookings: 35,
-      revenue: 425000,
-      avgRating: 4.8,
-      newClients: 145,
-      repeatClients: 340,
-    },
+  const [bookings, setBookings] = useState<BookingRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadBookings = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await bookingsApi.getMyBookings();
+      const list = data.bookings || data || [];
+      setBookings(
+        (Array.isArray(list) ? list : [])
+          .map((b: any) => {
+            const rawDate = b?.date ?? b?.createdAt;
+            const parsed = typeof rawDate === 'string' ? new Date(rawDate).getTime() : NaN;
+            return {
+              dateMs: Number.isNaN(parsed) ? null : parsed,
+              status: String(b?.status ?? 'pending'),
+              revenue: Number(b?.price ?? b?.total ?? b?.amount ?? 0),
+              customerId: String(b?.customerId ?? b?.user?.id ?? b?.customer?.id ?? b?.user?.email ?? ''),
+              service: String(b?.service ?? b?.serviceName ?? 'Service'),
+            } as BookingRecord;
+          })
+      );
+    } catch (error) {
+      logger.error('Failed to load analytics:', error);
+      setBookings([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load analytics.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBookings();
+  }, [loadBookings]);
+
+  const windowStart = Date.now() - PERIOD_DAYS[selectedPeriod] * 86400000;
+  const inWindow = bookings.filter(b => b.dateMs !== null && (b.dateMs as number) >= windowStart);
+
+  const data = {
+    totalBookings: inWindow.length,
+    completedBookings: inWindow.filter(b => b.status === 'completed').length,
+    cancelledBookings: inWindow.filter(b => b.status === 'cancelled' || b.status === 'no_show').length,
+    revenue: inWindow
+      .filter(b => b.status !== 'cancelled' && b.status !== 'no_show')
+      .reduce((s, b) => s + b.revenue, 0),
+    newClients: new Set(
+      inWindow
+        .filter(b => {
+          const first = bookings
+            .filter(x => x.customerId && x.customerId === b.customerId && x.dateMs !== null)
+            .map(x => x.dateMs as number);
+          return first.length > 0 && Math.min(...first) >= windowStart;
+        })
+        .map(b => b.customerId)
+    ).size,
+    repeatClients: new Set(
+      inWindow
+        .filter(b => {
+          const count = bookings.filter(x => x.customerId && x.customerId === b.customerId).length;
+          return count > 1;
+        })
+        .map(b => b.customerId)
+    ).size,
   };
 
-  const data = analyticsData[selectedPeriod];
+  // Last-7-days activity bars from real booking dates.
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const weeklyData = (() => {
+    const counts = [0, 0, 0, 0, 0, 0, 0];
+    const now = new Date();
+    for (const b of bookings) {
+      if (b.dateMs === null) continue;
+      const diffDays = Math.floor((now.getTime() - (b.dateMs as number)) / 86400000);
+      if (diffDays >= 0 && diffDays < 7) {
+        counts[new Date(b.dateMs as number).getDay()] += 1;
+      }
+    }
+    const ordered: { day: string; value: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      ordered.push({ day: dayNames[d.getDay()], value: counts[d.getDay()] });
+    }
+    return ordered;
+  })();
 
-  // Chart data for bar visualization
-  const weeklyData = [
-    { day: 'Mon', value: 5 },
-    { day: 'Tue', value: 8 },
-    { day: 'Wed', value: 12 },
-    { day: 'Thu', value: 7 },
-    { day: 'Fri', value: 10 },
-    { day: 'Sat', value: 15 },
-    { day: 'Sun', value: 6 },
-  ];
+  const maxValue = Math.max(1, ...weeklyData.map(d => d.value));
 
-  const maxValue = Math.max(...weeklyData.map(d => d.value));
-
-  const topServices = userRole === 'LOVER'
-    ? [
-        { name: 'Dog Walking', count: 25, percentage: 45 },
-        { name: 'Pet Sitting', count: 12, percentage: 25 },
-        { name: 'Overnight Stay', count: 8, percentage: 15 },
-        { name: 'Day Care', count: 5, percentage: 10 },
-        { name: 'Pet Meetup', count: 3, percentage: 5 },
-      ]
-    : [
-        { name: userRole === 'VET' ? 'Consultation' : 'Full Grooming', count: 18, percentage: 40 },
-        { name: userRole === 'VET' ? 'Vaccination' : 'Bath & Brush', count: 12, percentage: 25 },
-        { name: userRole === 'VET' ? 'Dental Cleaning' : 'Nail Trimming', count: 8, percentage: 18 },
-        { name: userRole === 'VET' ? 'Surgery' : 'De-shedding', count: 6, percentage: 12 },
-        { name: userRole === 'VET' ? 'Follow-up' : 'Ear Cleaning', count: 4, percentage: 5 },
-      ];
+  const topServices = (() => {
+    const freq = new Map<string, number>();
+    for (const b of inWindow) freq.set(b.service, (freq.get(b.service) ?? 0) + 1);
+    const total = Math.max(1, inWindow.length);
+    return [...freq.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count, percentage: Math.round((count / total) * 100) }));
+  })();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadBookings(); }} tintColor={config.color} />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -111,6 +169,26 @@ export default function AnalyticsScreen() {
           <Text style={styles.headerTitle}>{config.title}</Text>
           <View style={{ width: 40 }} />
         </View>
+
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={config.color} />
+            <Text style={styles.centerStateText}>Loading analytics...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.centerState}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+            <Text style={styles.centerStateTitle}>Could not load analytics</Text>
+            <Text style={styles.centerStateText}>{loadError}</Text>
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: config.color }]}
+              onPress={() => { setLoading(true); loadBookings(); }}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        <>
 
         {/* Period Selector */}
         <View style={styles.periodSelector}>
@@ -148,7 +226,7 @@ export default function AnalyticsScreen() {
               <Text style={styles.statLabel}>Completed</Text>
             </View>
             <View style={[styles.statCard, { borderTopColor: '#F59E0B' }]}>
-              <Text style={styles.statValue}>{data.avgRating}</Text>
+              <Text style={styles.statValue}>—</Text>
               <Text style={styles.statLabel}>Avg Rating</Text>
             </View>
             <View style={[styles.statCard, { borderTopColor: '#EF4444' }]}>
@@ -169,8 +247,10 @@ export default function AnalyticsScreen() {
               </Text>
             </View>
             <View style={styles.revenueChange}>
-              <Ionicons name="trending-up" size={18} color="#10B981" />
-              <Text style={styles.revenueChangeText}>+18% from last {selectedPeriod}</Text>
+              <Ionicons name="checkmark-done" size={18} color="#10B981" />
+              <Text style={styles.revenueChangeText}>
+                {data.completedBookings} completed this {selectedPeriod}
+              </Text>
             </View>
           </View>
         </View>
@@ -220,7 +300,7 @@ export default function AnalyticsScreen() {
               <View style={[styles.clientStatIcon, { backgroundColor: '#F59E0B15' }]}>
                 <Ionicons name="star" size={24} color="#F59E0B" />
               </View>
-              <Text style={styles.clientStatValue}>{data.avgRating}</Text>
+              <Text style={styles.clientStatValue}>—</Text>
               <Text style={styles.clientStatLabel}>Rating</Text>
             </View>
           </View>
@@ -230,7 +310,10 @@ export default function AnalyticsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Top {userRole === 'LOVER' ? 'Services' : 'Services'}</Text>
           <View style={styles.servicesCard}>
-            {topServices.map((service, index) => (
+            {topServices.length === 0 ? (
+              <Text style={styles.emptyServicesText}>No bookings in this period yet.</Text>
+            ) : (
+            topServices.map((service, index) => (
               <View key={service.name} style={styles.serviceItem}>
                 <View style={styles.serviceRank}>
                   <Text style={styles.serviceRankText}>{index + 1}</Text>
@@ -248,11 +331,13 @@ export default function AnalyticsScreen() {
                 </View>
                 <Text style={styles.serviceCount}>{service.count}</Text>
               </View>
-            ))}
+            )))}
           </View>
         </View>
 
         <View style={{ height: 100 }} />
+        </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -262,6 +347,42 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  centerState: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  centerStateTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.gray[800],
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  centerStateText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
+  },
+  emptyServicesText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    fontStyle: 'italic',
+    paddingVertical: 8,
   },
   header: {
     flexDirection: 'row',

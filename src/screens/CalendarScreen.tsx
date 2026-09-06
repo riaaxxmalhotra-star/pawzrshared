@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
-import { bookingsApi } from '../lib/api';
+import { bookingsApi, canTransitionBooking } from '../lib/api';
 import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
@@ -47,6 +47,26 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+/** Local calendar-day key. Never use toISOString() here: UTC conversion
+ *  shifts IST evenings onto the wrong day. */
+function toLocalDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, '0');
+  const day = `${d.getDate()}`.padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Normalize a server date (ISO datetime or YYYY-MM-DD) to a local day key. */
+function toDateKey(value: unknown): string {
+  if (typeof value === 'string') {
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  const d = value instanceof Date ? value : new Date(value as string);
+  if (Number.isNaN(d.getTime())) return '';
+  return toLocalDateKey(d);
+}
+
 export default function CalendarScreen() {
   const { user } = useAuth();
   const userRole = (user?.role || 'OWNER').toUpperCase();
@@ -59,6 +79,7 @@ export default function CalendarScreen() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [processingAction, setProcessingAction] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const getRoleConfig = () => {
     switch (userRole) {
@@ -80,13 +101,15 @@ export default function CalendarScreen() {
   }, [currentDate]);
 
   const loadBookings = async () => {
+    setLoadError(null);
     try {
       const data = await bookingsApi.getMyBookings();
       const grouped: DayBookings = {};
       const bookingsList = data.bookings || data || [];
 
       bookingsList.forEach((booking: any) => {
-        const dateKey = booking.date?.split('T')[0] || booking.date;
+        const dateKey = toDateKey(booking.date);
+        if (!dateKey) return;
         if (!grouped[dateKey]) {
           grouped[dateKey] = [];
         }
@@ -108,133 +131,15 @@ export default function CalendarScreen() {
 
       setBookings(grouped);
     } catch (error) {
+      // Honest failure: never silently substitute mock data for real bookings.
+      const message = error instanceof Error ? error.message : 'Could not load bookings.';
       logger.error('Failed to load bookings:', error);
-      setBookings(getMockBookings());
+      setBookings({});
+      setLoadError(message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  const getServiceForRole = (type: 'service1' | 'service2' | 'service3' | 'service4' | 'service5') => {
-    if (userRole === 'LOVER') {
-      const loverServices = {
-        service1: 'Dog Walking',
-        service2: 'Pet Sitting',
-        service3: 'Overnight Stay',
-        service4: 'Pet Meetup',
-        service5: 'Day Care',
-      };
-      return loverServices[type];
-    } else if (userRole === 'VET') {
-      const vetServices = {
-        service1: 'Annual Checkup',
-        service2: 'Vaccination',
-        service3: 'Dental Cleaning',
-        service4: 'Follow-up',
-        service5: 'Surgery Consultation',
-      };
-      return vetServices[type];
-    } else {
-      const groomerServices = {
-        service1: 'Full Grooming',
-        service2: 'Bath & Brush',
-        service3: 'De-shedding',
-        service4: 'Nail Trimming',
-        service5: 'Full Grooming',
-      };
-      return groomerServices[type];
-    }
-  };
-
-  const getMockBookings = (): DayBookings => {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dayAfter = new Date(today);
-    dayAfter.setDate(dayAfter.getDate() + 2);
-    const nextWeek = new Date(today);
-    nextWeek.setDate(nextWeek.getDate() + 5);
-
-    const formatDate = (d: Date) => d.toISOString().split('T')[0];
-
-    return {
-      [formatDate(today)]: [
-        {
-          id: '1',
-          customerName: 'Rahul Kumar',
-          customerPhone: '+91 98765 43210',
-          petName: 'Bruno',
-          petType: 'Golden Retriever',
-          service: getServiceForRole('service1'),
-          date: formatDate(today),
-          time: '10:00 AM',
-          duration: userRole === 'LOVER' ? 60 : 30,
-          status: 'confirmed',
-          price: userRole === 'LOVER' ? 400 : 800,
-        },
-        {
-          id: '2',
-          customerName: 'Priya Sharma',
-          customerPhone: '+91 87654 32109',
-          petName: 'Whiskers',
-          petType: 'Persian Cat',
-          service: getServiceForRole('service2'),
-          date: formatDate(today),
-          time: userRole === 'LOVER' ? '6:00 PM' : '2:30 PM',
-          duration: userRole === 'LOVER' ? 180 : 45,
-          status: 'pending',
-          price: userRole === 'LOVER' ? 800 : 600,
-        },
-      ],
-      [formatDate(tomorrow)]: [
-        {
-          id: '3',
-          customerName: 'Amit Patel',
-          customerPhone: '+91 76543 21098',
-          petName: 'Max',
-          petType: 'Labrador',
-          service: getServiceForRole('service3'),
-          date: formatDate(tomorrow),
-          time: userRole === 'LOVER' ? '8:00 PM' : '11:00 AM',
-          duration: userRole === 'LOVER' ? 720 : 60,
-          status: 'confirmed',
-          price: userRole === 'LOVER' ? 1500 : 1200,
-          notes: userRole === 'LOVER' ? 'Overnight care' : undefined,
-        },
-      ],
-      [formatDate(dayAfter)]: [
-        {
-          id: '4',
-          customerName: 'Neha Gupta',
-          customerPhone: '+91 65432 10987',
-          petName: 'Coco',
-          petType: 'Beagle',
-          service: getServiceForRole('service4'),
-          date: formatDate(dayAfter),
-          time: '3:00 PM',
-          duration: userRole === 'LOVER' ? 90 : 20,
-          status: 'pending',
-          notes: 'First time customer',
-          price: userRole === 'LOVER' ? 300 : 300,
-        },
-      ],
-      [formatDate(nextWeek)]: [
-        {
-          id: '5',
-          customerName: 'Vikram Singh',
-          customerPhone: '+91 54321 09876',
-          petName: 'Rocky',
-          petType: 'German Shepherd',
-          service: getServiceForRole('service5'),
-          date: formatDate(nextWeek),
-          time: '10:30 AM',
-          duration: userRole === 'LOVER' ? 480 : 45,
-          status: 'confirmed',
-          price: userRole === 'LOVER' ? 1200 : 1500,
-        },
-      ],
-    };
   };
 
   const onRefresh = () => {
@@ -263,7 +168,7 @@ export default function CalendarScreen() {
   const getDateKey = (day: number) => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-    return new Date(year, month, day).toISOString().split('T')[0];
+    return toLocalDateKey(new Date(year, month, day));
   };
 
   const getBookingsForDay = (day: number) => {
@@ -325,8 +230,20 @@ export default function CalendarScreen() {
     setShowBookingModal(true);
   };
 
+  const failAction = (error: unknown) => {
+    // Never apply the mutation locally on failure (the old code did) — the
+    // calendar must reflect the server, not wishful thinking.
+    const message = error instanceof Error ? error.message : 'Action failed. Please try again.';
+    logger.error('Booking action failed:', error);
+    Alert.alert('Could not update booking', message);
+  };
+
   const handleAcceptBooking = async () => {
     if (!selectedBooking) return;
+    if (!canTransitionBooking(selectedBooking.status, 'confirmed')) {
+      Alert.alert('Invalid action', `A ${selectedBooking.status} booking cannot be confirmed.`);
+      return;
+    }
     setProcessingAction(true);
     try {
       await bookingsApi.updateBooking(selectedBooking.id, { status: 'confirmed' });
@@ -340,14 +257,7 @@ export default function CalendarScreen() {
       setShowBookingModal(false);
       Alert.alert('Success', 'Booking confirmed!');
     } catch (error) {
-      const dateKey = selectedBooking.date;
-      setBookings(prev => ({
-        ...prev,
-        [dateKey]: prev[dateKey].map(b =>
-          b.id === selectedBooking.id ? { ...b, status: 'confirmed' as const } : b
-        ),
-      }));
-      setShowBookingModal(false);
+      failAction(error);
     } finally {
       setProcessingAction(false);
     }
@@ -355,6 +265,10 @@ export default function CalendarScreen() {
 
   const handleDeclineBooking = async () => {
     if (!selectedBooking) return;
+    if (!canTransitionBooking(selectedBooking.status, 'cancelled')) {
+      Alert.alert('Invalid action', `A ${selectedBooking.status} booking cannot be cancelled.`);
+      return;
+    }
     Alert.alert('Decline Booking', 'Are you sure you want to decline this booking?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -363,7 +277,8 @@ export default function CalendarScreen() {
         onPress: async () => {
           setProcessingAction(true);
           try {
-            await bookingsApi.updateBooking(selectedBooking.id, { status: 'cancelled' });
+            // Single cancel path — no second free-form status update.
+            await bookingsApi.cancelBooking(selectedBooking.id);
             const dateKey = selectedBooking.date;
             setBookings(prev => ({
               ...prev,
@@ -371,12 +286,7 @@ export default function CalendarScreen() {
             }));
             setShowBookingModal(false);
           } catch (error) {
-            const dateKey = selectedBooking.date;
-            setBookings(prev => ({
-              ...prev,
-              [dateKey]: prev[dateKey].filter(b => b.id !== selectedBooking.id),
-            }));
-            setShowBookingModal(false);
+            failAction(error);
           } finally {
             setProcessingAction(false);
           }
@@ -387,6 +297,10 @@ export default function CalendarScreen() {
 
   const handleCompleteBooking = async () => {
     if (!selectedBooking) return;
+    if (!canTransitionBooking(selectedBooking.status, 'completed')) {
+      Alert.alert('Invalid action', `A ${selectedBooking.status} booking cannot be completed.`);
+      return;
+    }
     setProcessingAction(true);
     try {
       await bookingsApi.updateBooking(selectedBooking.id, { status: 'completed' });
@@ -400,14 +314,7 @@ export default function CalendarScreen() {
       setShowBookingModal(false);
       Alert.alert('Success', 'Booking marked as completed!');
     } catch (error) {
-      const dateKey = selectedBooking.date;
-      setBookings(prev => ({
-        ...prev,
-        [dateKey]: prev[dateKey].map(b =>
-          b.id === selectedBooking.id ? { ...b, status: 'completed' as const } : b
-        ),
-      }));
-      setShowBookingModal(false);
+      failAction(error);
     } finally {
       setProcessingAction(false);
     }
@@ -434,7 +341,7 @@ export default function CalendarScreen() {
   };
 
   const selectedDayBookings = selectedDate
-    ? bookings[selectedDate.toISOString().split('T')[0]] || []
+    ? bookings[toLocalDateKey(selectedDate)] || []
     : [];
 
   const days = getDaysInMonth(currentDate);
@@ -474,6 +381,19 @@ export default function CalendarScreen() {
             <Text style={[styles.todayBtnText, { color: config.color }]}>Today</Text>
           </TouchableOpacity>
         </View>
+
+        {loadError && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="cloud-offline-outline" size={20} color="#B45309" />
+            <Text style={styles.errorBannerText}>{loadError}</Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => { setLoading(true); loadBookings(); }}
+            >
+              <Text style={styles.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Elegant Month Navigation */}
         <View style={styles.monthNav}>
@@ -810,6 +730,34 @@ const styles = StyleSheet.create({
   todayBtnText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 18,
+  },
+  retryBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#B45309',
+  },
+  retryBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.white,
   },
   monthNav: {
     flexDirection: 'row',

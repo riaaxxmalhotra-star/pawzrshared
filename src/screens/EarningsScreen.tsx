@@ -1,16 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import { bookingsApi } from '../lib/api';
+import logger from '../lib/logger';
+
+interface EarningTx {
+  id: string;
+  amount: number;
+  description: string;
+  date: string;
+  dateMs: number | null;
+  status: 'completed' | 'pending';
+}
+
+const PERIOD_DAYS = { week: 7, month: 30, year: 365 } as const;
+
+function displayDate(value: unknown): string {
+  if (typeof value !== 'string' || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 export default function EarningsScreen() {
   const navigation = useNavigation<any>();
@@ -35,54 +58,76 @@ export default function EarningsScreen() {
 
   const config = getRoleConfig();
 
-  // Mock earnings data
-  const earningsData = {
-    week: {
-      total: 8500,
-      pending: 1200,
-      completed: 7300,
-      withdrawn: 5000,
-      transactions: [
-        { id: '1', type: 'credit', amount: 800, description: 'Dog Walking - Bruno', date: 'Today, 10:00 AM', status: 'completed' },
-        { id: '2', type: 'credit', amount: 600, description: 'Pet Sitting - Whiskers', date: 'Today, 2:30 PM', status: 'pending' },
-        { id: '3', type: 'debit', amount: 5000, description: 'Withdrawal to Bank', date: 'Yesterday', status: 'completed' },
-        { id: '4', type: 'credit', amount: 1500, description: 'Overnight Stay - Max', date: '2 days ago', status: 'completed' },
-      ],
-    },
-    month: {
-      total: 35600,
-      pending: 4800,
-      completed: 30800,
-      withdrawn: 25000,
-      transactions: [
-        { id: '1', type: 'credit', amount: 800, description: 'Dog Walking - Bruno', date: 'Today, 10:00 AM', status: 'completed' },
-        { id: '2', type: 'credit', amount: 600, description: 'Pet Sitting - Whiskers', date: 'Today, 2:30 PM', status: 'pending' },
-        { id: '3', type: 'debit', amount: 10000, description: 'Withdrawal to Bank', date: '3 days ago', status: 'completed' },
-        { id: '4', type: 'credit', amount: 1500, description: 'Overnight Stay - Max', date: '5 days ago', status: 'completed' },
-        { id: '5', type: 'credit', amount: 400, description: 'Pet Meetup - Coco', date: '1 week ago', status: 'completed' },
-        { id: '6', type: 'debit', amount: 15000, description: 'Withdrawal to Bank', date: '2 weeks ago', status: 'completed' },
-      ],
-    },
-    year: {
-      total: 425000,
-      pending: 12000,
-      completed: 413000,
-      withdrawn: 380000,
-      transactions: [
-        { id: '1', type: 'credit', amount: 800, description: 'Dog Walking - Bruno', date: 'Today, 10:00 AM', status: 'completed' },
-        { id: '2', type: 'credit', amount: 600, description: 'Pet Sitting - Whiskers', date: 'Today, 2:30 PM', status: 'pending' },
-        { id: '3', type: 'debit', amount: 50000, description: 'Withdrawal to Bank', date: 'This month', status: 'completed' },
-        { id: '4', type: 'credit', amount: 35600, description: 'Monthly Earnings', date: 'Last month', status: 'completed' },
-      ],
-    },
-  };
+  const [transactions, setTransactions] = useState<EarningTx[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const data = earningsData[selectedPeriod];
+  // Earnings are derived from real completed/pending bookings. There is no
+  // payout backend, so withdrawals are honestly ₹0 with a coming-soon note —
+  // never fabricated withdrawal history.
+  const loadEarnings = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await bookingsApi.getMyBookings();
+      const list = data.bookings || data || [];
+      setTransactions(
+        (Array.isArray(list) ? list : [])
+          .map((b: any, index: number) => {
+            const rawDate = b?.date ?? b?.createdAt;
+            const parsed = typeof rawDate === 'string' ? new Date(rawDate).getTime() : NaN;
+            const status = b?.status === 'completed' ? 'completed' : 'pending';
+            return {
+              id: String(b?.id ?? b?._id ?? index),
+              amount: Number(b?.price ?? b?.total ?? b?.amount ?? 0),
+              description: [b?.service ?? b?.serviceName, b?.petName ?? b?.pet?.name]
+                .filter(Boolean).join(' - ') || 'Booking',
+              date: displayDate(rawDate),
+              dateMs: Number.isNaN(parsed) ? null : parsed,
+              status,
+            } as EarningTx;
+          })
+      );
+    } catch (error) {
+      logger.error('Failed to load earnings:', error);
+      setTransactions([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load earnings.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEarnings();
+  }, [loadEarnings]);
+
+  const windowStart = Date.now() - PERIOD_DAYS[selectedPeriod] * 86400000;
+  const inWindow = transactions.filter(t => t.dateMs !== null && (t.dateMs as number) >= windowStart);
+  const data = {
+    total: inWindow.reduce((s, t) => s + t.amount, 0),
+    pending: inWindow.filter(t => t.status === 'pending').reduce((s, t) => s + t.amount, 0),
+    completed: inWindow.filter(t => t.status === 'completed').reduce((s, t) => s + t.amount, 0),
+    withdrawn: 0,
+    transactions: inWindow,
+  };
   const availableBalance = data.completed - data.withdrawn;
+
+  const handleWithdraw = () => {
+    Alert.alert(
+      'Payouts coming soon',
+      'Withdrawals to bank/UPI are not available yet. Your cleared earnings are tracked here and will be payable once payouts launch.'
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadEarnings(); }} tintColor={config.color} />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -91,6 +136,26 @@ export default function EarningsScreen() {
           <Text style={styles.headerTitle}>{config.title}</Text>
           <View style={{ width: 40 }} />
         </View>
+
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={config.color} />
+            <Text style={styles.centerStateText}>Loading earnings...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.centerState}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+            <Text style={styles.centerStateTitle}>Could not load earnings</Text>
+            <Text style={styles.centerStateText}>{loadError}</Text>
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: config.color }]}
+              onPress={() => { setLoading(true); loadEarnings(); }}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        <>
 
         {/* Period Selector */}
         <View style={styles.periodSelector}>
@@ -120,7 +185,7 @@ export default function EarningsScreen() {
           <View style={[styles.balanceCard, { backgroundColor: config.color }]}>
             <Text style={styles.balanceLabel}>Available Balance</Text>
             <Text style={styles.balanceValue}>₹{availableBalance.toLocaleString()}</Text>
-            <TouchableOpacity style={styles.withdrawBtn}>
+            <TouchableOpacity style={styles.withdrawBtn} onPress={handleWithdraw}>
               <Ionicons name="wallet-outline" size={20} color={config.color} />
               <Text style={[styles.withdrawBtnText, { color: config.color }]}>Withdraw</Text>
             </TouchableOpacity>
@@ -155,58 +220,18 @@ export default function EarningsScreen() {
           </View>
         </View>
 
-        {/* Payment Methods */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Payment Methods</Text>
-            <TouchableOpacity>
-              <Text style={[styles.addText, { color: config.color }]}>+ Add</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.paymentCard}>
-            <View style={styles.bankIcon}>
-              <Ionicons name="card" size={24} color="#3B82F6" />
-            </View>
-            <View style={styles.paymentInfo}>
-              <Text style={styles.paymentTitle}>HDFC Bank</Text>
-              <Text style={styles.paymentSubtitle}>****1234 • Savings</Text>
-            </View>
-            <View style={styles.defaultBadge}>
-              <Text style={styles.defaultBadgeText}>Default</Text>
-            </View>
-          </View>
-          <View style={styles.paymentCard}>
-            <View style={[styles.bankIcon, { backgroundColor: '#8B5CF615' }]}>
-              <Ionicons name="phone-portrait" size={24} color="#8B5CF6" />
-            </View>
-            <View style={styles.paymentInfo}>
-              <Text style={styles.paymentTitle}>UPI</Text>
-              <Text style={styles.paymentSubtitle}>{user?.email?.split('@')[0] || 'user'}@upi</Text>
-            </View>
-          </View>
-        </View>
-
         {/* Recent Transactions */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Transactions</Text>
-            <TouchableOpacity>
-              <Text style={[styles.seeAllText, { color: config.color }]}>See all</Text>
-            </TouchableOpacity>
           </View>
-          {data.transactions.map((tx) => (
+          {data.transactions.length === 0 ? (
+            <Text style={styles.emptyTxText}>No earnings in this period yet.</Text>
+          ) : (
+          data.transactions.map((tx) => (
             <View key={tx.id} style={styles.transactionCard}>
-              <View
-                style={[
-                  styles.txIcon,
-                  { backgroundColor: tx.type === 'credit' ? '#10B98115' : '#EF444415' },
-                ]}
-              >
-                <Ionicons
-                  name={tx.type === 'credit' ? 'arrow-down' : 'arrow-up'}
-                  size={20}
-                  color={tx.type === 'credit' ? '#10B981' : '#EF4444'}
-                />
+              <View style={[styles.txIcon, { backgroundColor: '#10B98115' }]}>
+                <Ionicons name="arrow-down" size={20} color="#10B981" />
               </View>
               <View style={styles.txInfo}>
                 <Text style={styles.txDescription}>{tx.description}</Text>
@@ -219,16 +244,11 @@ export default function EarningsScreen() {
                   )}
                 </View>
               </View>
-              <Text
-                style={[
-                  styles.txAmount,
-                  { color: tx.type === 'credit' ? '#10B981' : '#EF4444' },
-                ]}
-              >
-                {tx.type === 'credit' ? '+' : '-'}₹{tx.amount.toLocaleString()}
+              <Text style={[styles.txAmount, { color: '#10B981' }]}>
+                +₹{tx.amount.toLocaleString()}
               </Text>
             </View>
-          ))}
+          )))}
         </View>
 
         {/* Withdrawal History */}
@@ -237,22 +257,18 @@ export default function EarningsScreen() {
           <View style={styles.withdrawalCard}>
             <View style={styles.withdrawalRow}>
               <Text style={styles.withdrawalLabel}>Total Withdrawn</Text>
-              <Text style={styles.withdrawalValue}>₹{data.withdrawn.toLocaleString()}</Text>
+              <Text style={styles.withdrawalValue}>₹0</Text>
             </View>
             <View style={styles.divider} />
-            <View style={styles.withdrawalRow}>
-              <Text style={styles.withdrawalLabel}>Last Withdrawal</Text>
-              <Text style={styles.withdrawalValue}>₹{(data.withdrawn / 5).toLocaleString()}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.withdrawalRow}>
-              <Text style={styles.withdrawalLabel}>Processing</Text>
-              <Text style={[styles.withdrawalValue, { color: '#F59E0B' }]}>₹0</Text>
-            </View>
+            <Text style={styles.payoutNote}>
+              Payouts to bank/UPI are coming soon. Cleared earnings above are tracked and will be payable on launch.
+            </Text>
           </View>
         </View>
 
         <View style={{ height: 100 }} />
+        </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -526,6 +542,47 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.gray[900],
+  },
+  payoutNote: {
+    fontSize: 13,
+    color: colors.gray[500],
+    lineHeight: 18,
+    fontStyle: 'italic',
+  },
+  emptyTxText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    fontStyle: 'italic',
+  },
+  centerState: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  centerStateTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.gray[800],
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  centerStateText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
   },
   divider: {
     height: 1,

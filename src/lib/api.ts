@@ -372,9 +372,43 @@ export const productsApi = {
   searchProducts: async (query: string) => {
     return apiRequest(`/browse/products?search=${encodeURIComponent(query)}`);
   },
+
+  // Supplier-owned catalog (same surface as ProviderListingsScreen).
+  getMyProducts: async () => {
+    return withRetry(() => apiRequest('/products/my-products'));
+  },
+
+  // Partial update of a supplier product (stock, price, isActive, ...).
+  // Backend convention assumption (PUT /products/:id) — see updateOrderStatus.
+  updateProduct: async (productId: string, updates: Record<string, unknown>) => {
+    return apiRequest(`/products/${encodePath(productId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
 };
 
 // Bookings API
+//
+// State machine: bookings move pending -> confirmed -> completed, with
+// cancelled / no_show reachable from pending or confirmed. Terminal states
+// accept no transitions. Enforced here AND (must be) server-side; the client
+// guard turns illegal taps into an explanatory message instead of a 4xx.
+export type BookingStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
+
+const BOOKING_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
+  pending: ['confirmed', 'cancelled', 'no_show'],
+  confirmed: ['completed', 'cancelled', 'no_show'],
+  completed: [],
+  cancelled: [],
+  no_show: [],
+};
+
+export function canTransitionBooking(from: string, to: BookingStatus): boolean {
+  const allowed = (BOOKING_TRANSITIONS as Record<string, BookingStatus[]>)[from] ?? [];
+  return allowed.includes(to);
+}
+
 export const bookingsApi = {
   getMyBookings: async () => {
     return withRetry(() => apiRequest('/bookings'));
@@ -400,7 +434,6 @@ export const bookingsApi = {
       method: 'POST',
     });
   },
-
   getBooking: async (bookingId: string) => {
     return apiRequest(`/bookings/${encodePath(bookingId)}`);
   },
@@ -436,6 +469,18 @@ export const ordersApi = {
 
   getOrder: async (orderId: string) => {
     return apiRequest(`/orders/${encodePath(orderId)}`);
+  },
+
+  // Update an order's fulfilment status. Backend convention assumption
+  // (PUT /orders/:id/status) — failures surface honestly via ApiError.
+  updateOrderStatus: async (
+    orderId: string,
+    status: 'confirmed' | 'shipped' | 'delivered' | 'cancelled'
+  ) => {
+    return apiRequest(`/orders/${encodePath(orderId)}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
   },
 };
 
@@ -760,6 +805,18 @@ export const locationApi = {
       method: 'PUT',
       body: JSON.stringify({ latitude, longitude }),
     }, 10000); // 10 second timeout for location updates
+  },
+};
+
+// Push Notifications API
+export const notificationsApi = {
+  // Upload the Expo push token for this device. Backend convention
+  // assumption (POST /users/push-token) — failures surface honestly.
+  registerToken: async (token: string, platform?: string) => {
+    return apiRequest('/users/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform }),
+    });
   },
 };
 

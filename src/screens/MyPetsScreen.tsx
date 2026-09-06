@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   Image,
   Alert,
   Modal,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +17,8 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import { petsApi } from '../lib/api';
+import logger from '../lib/logger';
 
 interface Pet {
   id: string;
@@ -31,10 +35,63 @@ interface Pet {
 export default function MyPetsScreen() {
   const { user, updateUserProfile } = useAuth();
   const navigation = useNavigation<any>();
-  const pets = user?.pets || [];
+  // Single source of truth shared with PetsScreen: the server roster.
+  // (user.pets is the offline cache, not the list shown here.)
+  const [pets, setPets] = useState<Pet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [editingPet, setEditingPet] = useState<Pet | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
+
+  const loadPets = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await petsApi.getMyPets();
+      const list = data.pets || data || [];
+      setPets(Array.isArray(list) ? list : []);
+      // Refresh the offline cache so other screens stay consistent.
+      if (Array.isArray(list)) {
+        updateUserProfile({ pets: list }).catch(() => {});
+      }
+    } catch (error) {
+      logger.error('Failed to load pets:', error);
+      setPets([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load your pets.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPets();
+  }, [loadPets]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadPets();
+  };
+
+  // Photo edits apply locally AND sync to the server (best-effort).
+  // NOTE: URIs stay local until a media-upload endpoint exists (Wave 4
+  // follow-up); the server stores the URI strings meanwhile.
+  const syncPetPhotos = async (petId: string, photos: string[]) => {
+    const updatedPets = pets.map(p => (p.id === petId ? { ...p, photos } : p));
+    setPets(updatedPets);
+    setEditingPet(updatedPets.find(p => p.id === petId) || null);
+    updateUserProfile({ pets: updatedPets }).catch(() => {});
+    try {
+      await petsApi.updatePet(petId, { photos });
+    } catch (error) {
+      logger.error('Pet photo sync failed:', error);
+      Alert.alert(
+        'Saved on this device',
+        'Photos were saved locally, but server sync failed. They will retry next time you edit.'
+      );
+    }
+  };
 
   const handleAddPhoto = async (petId: string) => {
     const pet = pets.find(p => p.id === petId);
@@ -59,14 +116,9 @@ export default function MyPetsScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      const updatedPets = pets.map(p => {
-        if (p.id === petId) {
-          return { ...p, photos: [...p.photos, result.assets[0].uri] };
-        }
-        return p;
-      });
-      await updateUserProfile({ pets: updatedPets });
-      setEditingPet(updatedPets.find(p => p.id === petId) || null);
+      const pet = pets.find(p => p.id === petId);
+      if (!pet) return;
+      await syncPetPhotos(petId, [...(pet.photos || []), result.assets[0].uri]);
     }
   };
 
@@ -80,15 +132,10 @@ export default function MyPetsScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
-            const updatedPets = pets.map(p => {
-              if (p.id === petId) {
-                const newPhotos = p.photos.filter((_, i) => i !== photoIndex);
-                return { ...p, photos: newPhotos };
-              }
-              return p;
-            });
-            await updateUserProfile({ pets: updatedPets });
-            setEditingPet(updatedPets.find(p => p.id === petId) || null);
+            const pet = pets.find(p => p.id === petId);
+            if (!pet) return;
+            const newPhotos = (pet.photos || []).filter((_, i) => i !== photoIndex);
+            await syncPetPhotos(petId, newPhotos);
           }
         }
       ]
@@ -168,7 +215,32 @@ export default function MyPetsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+      >
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.centerStateText}>Loading your pets...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.centerState}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+            <Text style={styles.centerStateTitle}>Could not load pets</Text>
+            <Text style={styles.centerStateText}>{loadError}</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => { setLoading(true); loadPets(); }}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        <>
         {/* Pet Count */}
         <View style={styles.countCard}>
           <Text style={styles.countNumber}>{pets.length}</Text>
@@ -281,10 +353,17 @@ export default function MyPetsScreen() {
         ))}
 
         <View style={{ height: 100 }} />
+        </>
+        )}
       </ScrollView>
 
       {/* Photo Edit Modal */}
-      <Modal visible={showPhotoModal} animationType="slide" transparent>
+      <Modal
+        visible={showPhotoModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowPhotoModal(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -373,6 +452,37 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+  },
+  centerState: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  centerStateTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.gray[800],
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  centerStateText: {
+    fontSize: 14,
+    color: colors.gray[500],
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.white,
   },
   countCard: {
     backgroundColor: colors.primary,

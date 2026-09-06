@@ -62,6 +62,7 @@ export default function ProviderListingsScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Service | Product | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -79,35 +80,21 @@ export default function ProviderListingsScreen() {
   }, []);
 
   const loadListings = async () => {
+    setLoadError(null);
     try {
       // Auth header is attached by apiRequest from the secure token store.
       const endpoint = isSupplier ? '/products/my-products' : '/services/my-services';
       const data = await apiRequest(endpoint);
       setListings(isSupplier ? (data.products || []) : (data.services || []));
     } catch (error) {
+      // Honest failure: never substitute mock listings for the real catalog.
       logger.error('Failed to load listings:', error);
-      // Use mock data for demo
-      setListings(getMockListings());
+      setListings([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load listings.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  const getMockListings = (): (Service | Product)[] => {
-    if (isSupplier) {
-      return [
-        { id: '1', name: 'Premium Dog Food', description: 'High-quality nutrition for adult dogs', price: 1299, stock: 50, category: 'Food & Treats', isActive: true },
-        { id: '2', name: 'Squeaky Toy Ball', description: 'Durable rubber ball with squeaker', price: 299, stock: 100, category: 'Toys', isActive: true },
-        { id: '3', name: 'Cozy Pet Bed', description: 'Soft cushioned bed for medium dogs', price: 1899, stock: 25, category: 'Beds & Furniture', isActive: false },
-      ];
-    }
-
-    const categories = serviceCategories[userRole as keyof typeof serviceCategories] || serviceCategories.VET;
-    return [
-      { id: '1', name: categories[0], description: `Professional ${categories[0].toLowerCase()} service`, price: 500, duration: 30, category: categories[0], isActive: true },
-      { id: '2', name: categories[1], description: `Quality ${categories[1].toLowerCase()} for your pet`, price: 800, duration: 45, category: categories[1], isActive: true },
-    ];
   };
 
   const onRefresh = () => {
@@ -187,26 +174,12 @@ export default function ProviderListingsScreen() {
       loadListings();
       Alert.alert('Success', editingItem ? 'Listing updated!' : 'Listing added!');
     } catch (error) {
+      // Honest failure: never fake a save locally — the catalog is server truth.
       logger.error('Failed to save:', error);
-      // For demo, just update locally
-      if (editingItem) {
-        setListings(listings.map(l => l.id === editingItem.id ? {
-          ...l,
-          ...formData,
-          price: parseFloat(formData.price),
-          ...(formData.stock ? { stock: parseInt(formData.stock) } : {}),
-          ...(formData.duration ? { duration: parseInt(formData.duration) } : {}),
-        } : l) as (Service | Product)[]);
-      } else {
-        const newItem = {
-          id: Date.now().toString(),
-          ...formData,
-          price: parseFloat(formData.price),
-          ...(isSupplier ? { stock: parseInt(formData.stock) } : { duration: formData.duration ? parseInt(formData.duration) : undefined }),
-        };
-        setListings([...listings, newItem as any]);
-      }
-      setShowAddModal(false);
+      Alert.alert(
+        'Could not save listing',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
     } finally {
       setSaving(false);
     }
@@ -229,8 +202,11 @@ export default function ProviderListingsScreen() {
               });
               loadListings();
             } catch (error) {
-              // For demo, just remove locally
-              setListings(listings.filter(l => l.id !== item.id));
+              logger.error('Failed to delete:', error);
+              Alert.alert(
+                'Could not delete listing',
+                error instanceof Error ? error.message : 'Please try again.'
+              );
             }
           },
         },
@@ -239,10 +215,25 @@ export default function ProviderListingsScreen() {
   };
 
   const toggleActive = async (item: Service | Product) => {
-    const updatedListings = listings.map(l =>
+    const previous = listings;
+    setListings(listings.map(l =>
       l.id === item.id ? { ...l, isActive: !l.isActive } : l
-    );
-    setListings(updatedListings as any);
+    ));
+    try {
+      const endpoint = isSupplier ? '/products' : '/services';
+      await apiRequest(`${endpoint}/${encodePath(item.id)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive: !item.isActive }),
+      });
+    } catch (error) {
+      // Revert the optimistic flip — the server is the source of truth.
+      setListings(previous);
+      logger.error('Failed to toggle listing:', error);
+      Alert.alert(
+        'Could not update listing',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    }
   };
 
   const getCategories = () => {
@@ -325,18 +316,26 @@ export default function ProviderListingsScreen() {
         {listings.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={[styles.emptyIcon, { backgroundColor: `${config.color}15` }]}>
-              <Ionicons name={config.icon as any} size={48} color={config.color} />
+              <Ionicons
+                name={loadError ? 'cloud-offline-outline' : (config.icon as any)}
+                size={48}
+                color={loadError ? '#B45309' : config.color}
+              />
             </View>
-            <Text style={styles.emptyTitle}>No {isSupplier ? 'products' : 'services'} yet</Text>
+            <Text style={styles.emptyTitle}>
+              {loadError ? 'Could not load listings' : `No ${isSupplier ? 'products' : 'services'} yet`}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              Add your first {isSupplier ? 'product to start receiving orders' : 'service to start receiving bookings'}
+              {loadError
+                ? loadError
+                : `Add your first ${isSupplier ? 'product to start receiving orders' : 'service to start receiving bookings'}`}
             </Text>
             <TouchableOpacity
-              style={[styles.emptyButton, { backgroundColor: config.color }]}
-              onPress={openAddModal}
+              style={[styles.emptyButton, { backgroundColor: loadError ? '#B45309' : config.color }]}
+              onPress={loadError ? () => { setLoading(true); loadListings(); } : openAddModal}
             >
-              <Ionicons name="add" size={20} color={colors.white} />
-              <Text style={styles.emptyButtonText}>{config.addText}</Text>
+              <Ionicons name={loadError ? 'refresh' : 'add'} size={20} color={colors.white} />
+              <Text style={styles.emptyButtonText}>{loadError ? 'Retry' : config.addText}</Text>
             </TouchableOpacity>
           </View>
         ) : (

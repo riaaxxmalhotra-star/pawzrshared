@@ -8,6 +8,33 @@ import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
 import { FEATURES } from '../config/featureFlags';
 import { getTabBarHeight, getTabBarFontSize, isTablet } from '../utils/responsive';
+import { navigationRef } from './navigationRef';
+
+// Deep links: pawzr://chat, pawzr://events, pawzr://events/<id>,
+// pawzr://cafes/<id>, pawzr://bookings, pawzr://calendar, pawzr://orders.
+const linking = {
+  prefixes: ['pawzr://'],
+  config: {
+    screens: {
+      Main: {
+        screens: {
+          Home: {
+            screens: {
+              EventsList: 'events',
+              EventDetail: 'events/:eventId',
+              CafeDetail: 'cafes/:cafeId',
+              Calendar: 'calendar',
+              Orders: 'orders',
+            },
+          },
+          Chat: 'chat',
+          Events: 'events-tab',
+          Bookings: 'bookings',
+        },
+      },
+    },
+  },
+};
 
 // Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -548,7 +575,7 @@ export default function AppNavigator() {
   const needsRoleSelection = user && !user.onboardingComplete;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         {!user ? (
           <RootStack.Screen name="Auth" component={AuthNavigator} />

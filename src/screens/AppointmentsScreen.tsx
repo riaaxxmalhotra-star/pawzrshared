@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,18 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
+import { bookingsApi } from '../lib/api';
+import logger from '../lib/logger';
 
 interface Appointment {
   id: string;
+  providerId?: string;
   providerName: string;
   providerType: 'vet' | 'groomer';
   service: string;
@@ -25,70 +29,71 @@ interface Appointment {
   googleMapsLink?: string;
 }
 
+function displayDate(value: unknown): string {
+  if (typeof value !== 'string' || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 export default function AppointmentsScreen() {
   const navigation = useNavigation<any>();
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Mock appointments data
-  const appointments: Appointment[] = [
-    {
-      id: '1',
-      providerName: 'Dr. Sarah',
-      providerType: 'vet',
-      service: 'Annual Checkup',
-      date: 'Tomorrow',
-      time: '10:00 AM',
-      status: 'upcoming',
-      petName: 'Bruno',
-      address: '123 Pet Care Lane, Sector 15, Gurgaon',
-      googleMapsLink: 'https://maps.google.com/?q=28.4595,77.0266',
-    },
-    {
-      id: '2',
-      providerName: 'PetSpa Studio',
-      providerType: 'groomer',
-      service: 'Full Grooming',
-      date: 'Fri, Jan 17',
-      time: '2:30 PM',
-      status: 'upcoming',
-      petName: 'Bruno',
-      address: '456 Grooming Ave, Sector 20, Gurgaon',
-      googleMapsLink: 'https://maps.google.com/?q=28.4700,77.0300',
-    },
-    {
-      id: '3',
-      providerName: 'Dr. Amit Sharma',
-      providerType: 'vet',
-      service: 'Vaccination',
-      date: 'Mon, Jan 20',
-      time: '11:30 AM',
-      status: 'upcoming',
-      petName: 'Bruno',
-      address: '789 Vet Street, Sector 10, Gurgaon',
-      googleMapsLink: 'https://maps.google.com/?q=28.4650,77.0250',
-    },
-    {
-      id: '4',
-      providerName: 'Happy Paws Grooming',
-      providerType: 'groomer',
-      service: 'Bath & Brush',
-      date: 'Dec 28, 2025',
-      time: '3:00 PM',
-      status: 'completed',
-      petName: 'Bruno',
-    },
-    {
-      id: '5',
-      providerName: 'Dr. Priya',
-      providerType: 'vet',
-      service: 'Follow-up Visit',
-      date: 'Dec 20, 2025',
-      time: '4:00 PM',
-      status: 'completed',
-      petName: 'Bruno',
-    },
-  ];
+  const loadAppointments = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await bookingsApi.getMyBookings();
+      const list = data.bookings || data || [];
+      setAppointments(
+        (Array.isArray(list) ? list : [])
+          .map((b: any) => {
+            const id = b?.id ?? b?._id;
+            if (id === undefined || id === null) return null;
+            const rawStatus = String(b.status ?? 'pending');
+            const status: Appointment['status'] =
+              rawStatus === 'completed' || rawStatus === 'cancelled' || rawStatus === 'no_show'
+                ? rawStatus === 'no_show' ? 'cancelled' : rawStatus
+                : 'upcoming';
+            const rawType = String(b.providerType ?? b.provider?.type ?? '').toLowerCase();
+            return {
+              id: String(id),
+              providerId: b.providerId ? String(b.providerId) : b.provider?.id ? String(b.provider.id) : undefined,
+              providerName: b.providerName ?? b.provider?.name ?? b.clinicName ?? b.businessName ?? 'Provider',
+              providerType: rawType === 'groomer' ? 'groomer' : 'vet',
+              service: b.service ?? b.serviceName ?? 'Appointment',
+              date: displayDate(b.date),
+              time: b.time ?? '',
+              status,
+              petName: b.petName ?? b.pet?.name,
+              address: b.address ?? b.provider?.address,
+              googleMapsLink: b.googleMapsLink ?? b.provider?.googleMapsLink,
+            } as Appointment;
+          })
+          .filter((a): a is Appointment => a !== null)
+      );
+    } catch (error) {
+      logger.error('Failed to load appointments:', error);
+      setAppointments([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load appointments.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAppointments();
+  }, [loadAppointments]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadAppointments();
+  };
 
   const upcomingAppointments = appointments.filter(a => a.status === 'upcoming');
   const pastAppointments = appointments.filter(a => a.status === 'completed' || a.status === 'cancelled');
@@ -108,22 +113,16 @@ export default function AppointmentsScreen() {
     // Navigate to provider profile with appointment details
     navigation.navigate('ProviderProfile', {
       provider: {
-        id: appointment.id,
+        id: appointment.providerId ?? appointment.id,
         name: appointment.providerName,
         type: appointment.providerType,
         address: appointment.address || 'Address not available',
         googleMapsLink: appointment.googleMapsLink,
-        rating: 4.8,
-        reviewCount: 50,
-        distance: '1.2 km',
+        rating: 0,
+        reviewCount: 0,
+        distance: '',
       },
     });
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    // Simulate refresh
-    setTimeout(() => setRefreshing(false), 1000);
   };
 
   const renderAppointment = (appointment: Appointment) => {
@@ -216,7 +215,24 @@ export default function AppointmentsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        {activeTab === 'upcoming' ? (
+        {loading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.emptyText}>Loading appointments...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="cloud-offline-outline" size={60} color={colors.gray[300]} />
+            <Text style={styles.emptyTitle}>Could not load appointments</Text>
+            <Text style={styles.emptyText}>{loadError}</Text>
+            <TouchableOpacity
+              style={styles.bookButton}
+              onPress={() => { setLoading(true); loadAppointments(); }}
+            >
+              <Text style={styles.bookButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : activeTab === 'upcoming' ? (
           upcomingAppointments.length > 0 ? (
             upcomingAppointments.map(renderAppointment)
           ) : (

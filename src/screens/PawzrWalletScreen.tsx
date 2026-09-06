@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import ComingSoonPanel from '../components/ComingSoonPanel';
 
 const { width } = Dimensions.get('window');
 
@@ -985,9 +986,15 @@ export default function PawzrWalletScreen() {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {providerTab === 'earnings' && renderProviderEarningsTab()}
-          {providerTab === 'payouts' && renderProviderPayoutsTab()}
-          {providerTab === 'analytics' && renderProviderAnalyticsTab()}
+          {/* Wallet, payouts, and rewards have no payment backend yet — the
+              mock dashboards below are intentionally unreachable until the
+              real payments build lands (Wave 0 scope decision). */}
+          <ComingSoonPanel
+            icon="cash-outline"
+            title="Earnings & payouts"
+            body="Payouts, bank transfers, and earnings reports are coming soon. Track your live numbers meanwhile in Orders and Calendar."
+            color={roleColor}
+          />
 
           <View style={{ height: 100 }} />
         </ScrollView>
@@ -1053,9 +1060,15 @@ export default function PawzrWalletScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {activeTab === 'wallet' && renderWalletTab()}
-        {activeTab === 'rewards' && renderRewardsTab()}
-        {activeTab === 'loyalty' && renderLoyaltyTab()}
+        {/* Wallet, rewards, and loyalty have no payment backend yet — the
+            mock dashboards below are intentionally unreachable until the
+            real payments build lands (Wave 0 scope decision). */}
+        <ComingSoonPanel
+          icon="wallet-outline"
+          title={activeTab === 'wallet' ? 'Pawzr Wallet' : activeTab === 'rewards' ? 'Rewards' : 'Loyalty'}
+          body="Balance, cashback, points, and redemptions are coming soon. Nothing shown here moves real money."
+          color="#F97316"
+        />
 
         <View style={{ height: 100 }} />
       </ScrollView>

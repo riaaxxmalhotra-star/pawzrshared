@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,16 @@ import {
   Image,
   RefreshControl,
   Dimensions,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../lib/auth';
 import { colors } from '../theme/colors';
+import { ordersApi } from '../lib/api';
+import logger from '../lib/logger';
 
 const { width } = Dimensions.get('window');
 
@@ -41,182 +45,36 @@ interface RepeatCustomer {
   totalOrders: number;
   totalSpent: number;
   lastOrderDate: string;
-  loyaltyScore: number;
 }
 
-interface RetentionAlert {
+interface RepeatCustomer {
   id: string;
-  type: 'at_risk' | 'lost' | 'declining';
-  message: string;
-  customerCount: number;
-  suggestion: string;
-  icon: string;
+  name: string;
+  image?: string;
+  totalOrders: number;
+  totalSpent: number;
+  lastOrderDate: string;
 }
 
-// Mock orders data
-const mockOrders: Order[] = [
-  {
-    id: 'ORD001',
-    customerName: 'Rahul Kumar',
-    customerId: 'CUS001',
-    customerImage: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-    items: [
-      { name: 'Premium Dog Food 5kg', quantity: 2, price: 1200 },
-      { name: 'Chew Toys Set', quantity: 1, price: 450 },
-    ],
-    total: 2850,
-    status: 'pending',
-    date: '2 mins ago',
-    address: 'Koramangala, Bangalore',
-    phone: '+91 98765 43210',
-    isRepeatCustomer: true,
-    visitCount: 5,
-  },
-  {
-    id: 'ORD002',
-    customerName: 'Priya Sharma',
-    customerId: 'CUS002',
-    customerImage: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100',
-    items: [
-      { name: 'Cat Litter 10kg', quantity: 1, price: 800 },
-    ],
-    total: 800,
-    status: 'confirmed',
-    date: '1 hour ago',
-    address: 'Indiranagar, Bangalore',
-    phone: '+91 87654 32109',
-    isRepeatCustomer: true,
-    visitCount: 3,
-  },
-  {
-    id: 'ORD005',
-    customerName: 'Vikram Singh',
-    customerId: 'CUS005',
-    items: [
-      { name: 'Bird Cage Large', quantity: 1, price: 3500 },
-    ],
-    total: 3500,
-    status: 'pending',
-    date: '30 mins ago',
-    address: 'JP Nagar, Bangalore',
-    phone: '+91 98761 23456',
-  },
-  {
-    id: 'ORD003',
-    customerName: 'Amit Patel',
-    customerId: 'CUS003',
-    items: [
-      { name: 'Pet Grooming Kit', quantity: 1, price: 1500 },
-      { name: 'Pet Shampoo', quantity: 2, price: 350 },
-    ],
-    total: 2200,
-    status: 'shipped',
-    date: 'Yesterday',
-    address: 'HSR Layout, Bangalore',
-    phone: '+91 76543 21098',
-  },
-  {
-    id: 'ORD006',
-    customerName: 'Sneha Reddy',
-    customerId: 'CUS006',
-    customerImage: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100',
-    items: [
-      { name: 'Fish Tank 50L', quantity: 1, price: 4500 },
-      { name: 'Fish Food Pack', quantity: 3, price: 200 },
-    ],
-    total: 5100,
-    status: 'confirmed',
-    date: '3 hours ago',
-    address: 'Marathahalli, Bangalore',
-    phone: '+91 87651 23098',
-    isRepeatCustomer: true,
-    visitCount: 8,
-  },
-  {
-    id: 'ORD004',
-    customerName: 'Neha Gupta',
-    customerId: 'CUS004',
-    customerImage: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100',
-    items: [
-      { name: 'Dog Bed Large', quantity: 1, price: 2500 },
-    ],
-    total: 2500,
-    status: 'delivered',
-    date: '2 days ago',
-    address: 'Whitefield, Bangalore',
-    phone: '+91 65432 10987',
-    isRepeatCustomer: true,
-    visitCount: 12,
-  },
-];
+function displayDate(value: unknown): string {
+  if (typeof value !== 'string' || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} mins ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  return d.toLocaleDateString();
+}
 
-// Mock repeat customers
-const mockRepeatCustomers: RepeatCustomer[] = [
-  {
-    id: 'CUS004',
-    name: 'Neha Gupta',
-    image: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100',
-    totalOrders: 12,
-    totalSpent: 28500,
-    lastOrderDate: '2 days ago',
-    loyaltyScore: 95,
-  },
-  {
-    id: 'CUS006',
-    name: 'Sneha Reddy',
-    image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100',
-    totalOrders: 8,
-    totalSpent: 18200,
-    lastOrderDate: '3 hours ago',
-    loyaltyScore: 88,
-  },
-  {
-    id: 'CUS001',
-    name: 'Rahul Kumar',
-    image: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-    totalOrders: 5,
-    totalSpent: 12400,
-    lastOrderDate: '2 mins ago',
-    loyaltyScore: 78,
-  },
-  {
-    id: 'CUS002',
-    name: 'Priya Sharma',
-    image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100',
-    totalOrders: 3,
-    totalSpent: 4800,
-    lastOrderDate: '1 hour ago',
-    loyaltyScore: 65,
-  },
-];
-
-// Mock retention alerts (anonymous - no customer names)
-const mockRetentionAlerts: RetentionAlert[] = [
-  {
-    id: 'ALERT001',
-    type: 'at_risk',
-    message: '3 regular customers haven\'t ordered in 2+ weeks',
-    customerCount: 3,
-    suggestion: 'Send a personalized offer or check-in message',
-    icon: 'warning',
-  },
-  {
-    id: 'ALERT002',
-    type: 'declining',
-    message: '2 customers reduced their order frequency',
-    customerCount: 2,
-    suggestion: 'Consider loyalty rewards or exclusive deals',
-    icon: 'trending-down',
-  },
-  {
-    id: 'ALERT003',
-    type: 'lost',
-    message: '1 customer may have switched to another provider',
-    customerCount: 1,
-    suggestion: 'Win them back with a special comeback offer',
-    icon: 'alert-circle',
-  },
-];
+function isToday(value: unknown): boolean {
+  const d = typeof value === 'string' ? new Date(value) : null;
+  if (!d || Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
 
 export default function OrdersScreen() {
   const navigation = useNavigation<any>();
@@ -225,6 +83,10 @@ export default function OrdersScreen() {
   const [selectedTab, setSelectedTab] = useState<'all' | OrderStatus>('all');
   const [activeSection, setActiveSection] = useState<'orders' | 'sales' | 'customers'>('orders');
   const [refreshing, setRefreshing] = useState(false);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
 
   // Role-specific configuration
   const getRoleConfig = () => {
@@ -241,17 +103,91 @@ export default function OrdersScreen() {
 
   const config = getRoleConfig();
 
+  const loadOrders = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await ordersApi.getMyOrders();
+      const list = data.orders || data.data || data || [];
+      setOrders(
+        (Array.isArray(list) ? list : [])
+          .map((o: any) => {
+            const id = o?.id ?? o?._id ?? o?.orderId;
+            if (id === undefined || id === null) return null;
+            const items = (Array.isArray(o.items) ? o.items : []).map((i: any) => ({
+              name: String(i.name ?? i.productName ?? i.title ?? 'Item'),
+              quantity: Number(i.quantity ?? i.qty ?? 1),
+              price: Number(i.price ?? i.unitPrice ?? 0),
+            }));
+            const rawDate = o.createdAt ?? o.date ?? o.placedAt ?? '';
+            return {
+              id: String(id),
+              customerName: o.customerName ?? o.customer?.name ?? o.user?.name ?? 'Customer',
+              customerImage: o.customerImage ?? o.customer?.image,
+              customerId: String(o.customerId ?? o.customer?.id ?? o.user?.id ?? ''),
+              items,
+              total: Number(o.total ?? o.amount ?? o.grandTotal ?? items.reduce((s: number, i: { price: number; quantity: number }) => s + i.price * i.quantity, 0)),
+              status: (o.status ?? 'pending') as OrderStatus,
+              date: displayDate(rawDate),
+              rawDate: typeof rawDate === 'string' ? rawDate : '',
+              address: o.address ?? o.shippingAddress ?? '',
+              phone: o.phone ?? o.customer?.phone ?? '',
+              isRepeatCustomer: Boolean(o.isRepeatCustomer),
+            } as Order & { rawDate: string };
+          })
+          .filter((o): o is Order & { rawDate: string } => o !== null)
+      );
+    } catch (error) {
+      logger.error('Failed to load orders:', error);
+      setOrders([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load orders.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadOrders();
+  };
+
+  const updateStatus = async (order: Order, status: 'confirmed' | 'shipped' | 'delivered' | 'cancelled') => {
+    if (actingId) return;
+    setActingId(order.id);
+    try {
+      await ordersApi.updateOrderStatus(order.id, status);
+      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, status } : o)));
+    } catch (error) {
+      logger.error('Order status update failed:', error);
+      Alert.alert('Update failed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const confirmReject = (order: Order) => {
+    Alert.alert('Reject order?', `Reject order #${order.id}? The customer will be notified.`, [
+      { text: 'Keep', style: 'cancel' },
+      { text: 'Reject', style: 'destructive', onPress: () => updateStatus(order, 'cancelled') },
+    ]);
+  };
+
   const tabs: { key: 'all' | OrderStatus; label: string; count: number }[] = [
-    { key: 'all', label: 'All', count: mockOrders.length },
-    { key: 'pending', label: 'Pending', count: mockOrders.filter(o => o.status === 'pending').length },
-    { key: 'confirmed', label: 'Confirmed', count: mockOrders.filter(o => o.status === 'confirmed').length },
-    { key: 'shipped', label: 'Shipped', count: mockOrders.filter(o => o.status === 'shipped').length },
-    { key: 'delivered', label: 'Completed', count: mockOrders.filter(o => o.status === 'delivered').length },
+    { key: 'all', label: 'All', count: orders.length },
+    { key: 'pending', label: 'Pending', count: orders.filter(o => o.status === 'pending').length },
+    { key: 'confirmed', label: 'Confirmed', count: orders.filter(o => o.status === 'confirmed').length },
+    { key: 'shipped', label: 'Shipped', count: orders.filter(o => o.status === 'shipped').length },
+    { key: 'delivered', label: 'Completed', count: orders.filter(o => o.status === 'delivered').length },
+    { key: 'cancelled', label: 'Cancelled', count: orders.filter(o => o.status === 'cancelled').length },
   ];
 
   const filteredOrders = selectedTab === 'all'
-    ? mockOrders
-    : mockOrders.filter(order => order.status === selectedTab);
+    ? orders
+    : orders.filter(order => order.status === selectedTab);
 
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
@@ -275,31 +211,44 @@ export default function OrdersScreen() {
     }
   };
 
-  const getAlertColor = (type: string) => {
-    switch (type) {
-      case 'at_risk': return '#F59E0B';
-      case 'declining': return '#F97316';
-      case 'lost': return '#EF4444';
-      default: return colors.gray[500];
-    }
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1500);
-  };
-
-  // Calculate stats
+  // Calculate stats from real orders
   const stats = {
-    pending: mockOrders.filter(o => o.status === 'pending').length,
-    confirmed: mockOrders.filter(o => o.status === 'confirmed').length,
-    shipped: mockOrders.filter(o => o.status === 'shipped').length,
-    delivered: mockOrders.filter(o => o.status === 'delivered').length,
-    totalRevenue: mockOrders.reduce((sum, o) => sum + o.total, 0),
-    todayRevenue: mockOrders.filter(o => o.date.includes('mins') || o.date.includes('hour')).reduce((sum, o) => sum + o.total, 0),
-    repeatCustomerRate: Math.round((mockOrders.filter(o => o.isRepeatCustomer).length / mockOrders.length) * 100),
-    avgOrderValue: Math.round(mockOrders.reduce((sum, o) => sum + o.total, 0) / mockOrders.length),
+    pending: orders.filter(o => o.status === 'pending').length,
+    confirmed: orders.filter(o => o.status === 'confirmed').length,
+    shipped: orders.filter(o => o.status === 'shipped').length,
+    delivered: orders.filter(o => o.status === 'delivered').length,
+    totalRevenue: orders.reduce((sum, o) => sum + o.total, 0),
+    todayRevenue: orders
+      .filter(o => isToday((o as Order & { rawDate?: string }).rawDate))
+      .reduce((sum, o) => sum + o.total, 0),
+    repeatCustomerRate: orders.length === 0 ? 0 : Math.round(
+      (orders.filter(o => o.isRepeatCustomer).length / orders.length) * 100
+    ),
+    avgOrderValue: orders.length === 0 ? 0 : Math.round(
+      orders.reduce((sum, o) => sum + o.total, 0) / orders.length
+    ),
   };
+
+  // Repeat customers derived from real order history (grouped by customer).
+  const repeatCustomers: RepeatCustomer[] = (() => {
+    const groups = new Map<string, Order[]>();
+    for (const o of orders) {
+      if (!o.customerId) continue;
+      const list = groups.get(o.customerId) ?? [];
+      list.push(o);
+      groups.set(o.customerId, list);
+    }
+    return [...groups.entries()]
+      .filter(([, list]) => list.length > 1 || list[0].isRepeatCustomer)
+      .map(([id, list]) => ({
+        id,
+        name: list[0].customerName,
+        image: list[0].customerImage,
+        totalOrders: list.length,
+        totalSpent: list.reduce((s, o) => s + o.total, 0),
+        lastOrderDate: list.map(o => o.date).filter(Boolean)[0] ?? '',
+      }));
+  })();
 
   const renderOrdersSection = () => (
     <>
@@ -356,7 +305,24 @@ export default function OrdersScreen() {
       </ScrollView>
 
       {/* Orders List */}
-      {filteredOrders.length === 0 ? (
+      {loading ? (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color={config.color} />
+          <Text style={styles.emptyText}>Loading orders...</Text>
+        </View>
+      ) : loadError ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="cloud-offline-outline" size={60} color={colors.gray[300]} />
+          <Text style={styles.emptyTitle}>Could not load orders</Text>
+          <Text style={styles.emptyText}>{loadError}</Text>
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: config.color, marginTop: 16 }]}
+            onPress={() => { setLoading(true); loadOrders(); }}
+          >
+            <Text style={styles.acceptBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : filteredOrders.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="receipt-outline" size={60} color={colors.gray[300]} />
           <Text style={styles.emptyTitle}>No {selectedTab} orders</Text>
@@ -415,19 +381,37 @@ export default function OrdersScreen() {
 
               {order.status === 'pending' && (
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity style={[styles.actionBtn, styles.rejectBtn]}>
-                    <Text style={styles.rejectBtnText}>Reject</Text>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.rejectBtn]}
+                    onPress={() => confirmReject(order)}
+                    disabled={actingId === order.id}
+                  >
+                    <Text style={styles.rejectBtnText}>
+                      {actingId === order.id ? 'Working...' : 'Reject'}
+                    </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10B981' }]}>
-                    <Text style={styles.acceptBtnText}>Accept</Text>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
+                    onPress={() => updateStatus(order, 'confirmed')}
+                    disabled={actingId === order.id}
+                  >
+                    <Text style={styles.acceptBtnText}>
+                      {actingId === order.id ? 'Working...' : 'Accept'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}
 
               {order.status === 'confirmed' && (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#8B5CF6' }]}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#8B5CF6' }]}
+                  onPress={() => updateStatus(order, 'shipped')}
+                  disabled={actingId === order.id}
+                >
                   <Ionicons name="car-outline" size={16} color="#fff" />
-                  <Text style={styles.shipBtnText}>Ship Now</Text>
+                  <Text style={styles.shipBtnText}>
+                    {actingId === order.id ? 'Working...' : 'Ship Now'}
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -447,8 +431,8 @@ export default function OrdersScreen() {
         <View style={styles.revenueHeader}>
           <Text style={styles.revenueSectionTitle}>Revenue Overview</Text>
           <View style={[styles.trendBadge, { backgroundColor: '#D1FAE515' }]}>
-            <Ionicons name="trending-up" size={14} color="#10B981" />
-            <Text style={styles.trendText}>+18%</Text>
+            <Ionicons name="receipt-outline" size={14} color="#10B981" />
+            <Text style={styles.trendText}>{orders.length} orders</Text>
           </View>
         </View>
 
@@ -472,7 +456,7 @@ export default function OrdersScreen() {
           <View style={[styles.metricIcon, { backgroundColor: '#DBEAFE' }]}>
             <Ionicons name="receipt" size={24} color="#2563EB" />
           </View>
-          <Text style={styles.metricValue}>{mockOrders.length}</Text>
+          <Text style={styles.metricValue}>{orders.length}</Text>
           <Text style={styles.metricLabel}>Total Orders</Text>
         </View>
         <View style={styles.metricCard}>
@@ -493,7 +477,7 @@ export default function OrdersScreen() {
           <View style={[styles.metricIcon, { backgroundColor: '#EDE9FE' }]}>
             <Ionicons name="people" size={24} color="#7C3AED" />
           </View>
-          <Text style={styles.metricValue}>{mockRepeatCustomers.length}</Text>
+          <Text style={styles.metricValue}>{repeatCustomers.length}</Text>
           <Text style={styles.metricLabel}>Loyal Customers</Text>
         </View>
       </View>
@@ -523,32 +507,18 @@ export default function OrdersScreen() {
 
   const renderCustomersSection = () => (
     <>
-      {/* Customer Retention Alerts */}
+      {/* Repeat Customers — derived from real order history */}
       <Text style={styles.sectionTitle}>
-        <Ionicons name="notifications" size={16} color={colors.gray[700]} /> Retention Alerts
-      </Text>
-      {mockRetentionAlerts.map((alert) => (
-        <View key={alert.id} style={[styles.alertCard, { borderLeftColor: getAlertColor(alert.type) }]}>
-          <View style={styles.alertHeader}>
-            <View style={[styles.alertIconContainer, { backgroundColor: `${getAlertColor(alert.type)}15` }]}>
-              <Ionicons name={alert.icon as any} size={20} color={getAlertColor(alert.type)} />
-            </View>
-            <View style={styles.alertContent}>
-              <Text style={styles.alertMessage}>{alert.message}</Text>
-              <Text style={styles.alertSuggestion}>{alert.suggestion}</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={[styles.alertAction, { backgroundColor: getAlertColor(alert.type) }]}>
-            <Text style={styles.alertActionText}>Take Action</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-
-      {/* Repeat Customers */}
-      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
         <Ionicons name="star" size={16} color="#F59E0B" /> Repeat Customers
       </Text>
-      {mockRepeatCustomers.map((customer) => (
+      {repeatCustomers.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="people-outline" size={48} color={colors.gray[300]} />
+          <Text style={styles.emptyTitle}>No repeat customers yet</Text>
+          <Text style={styles.emptyText}>Customers with more than one order will show up here</Text>
+        </View>
+      ) : (
+      repeatCustomers.map((customer) => (
         <View key={customer.id} style={styles.customerCard}>
           <View style={styles.customerRow}>
             {customer.image ? (
@@ -561,10 +531,6 @@ export default function OrdersScreen() {
             <View style={styles.customerDetails}>
               <Text style={styles.customerCardName}>{customer.name}</Text>
               <Text style={styles.customerMeta}>{customer.totalOrders} orders • Last: {customer.lastOrderDate}</Text>
-            </View>
-            <View style={styles.loyaltyBadge}>
-              <Ionicons name="heart" size={14} color="#EF4444" />
-              <Text style={styles.loyaltyScore}>{customer.loyaltyScore}</Text>
             </View>
           </View>
           <View style={styles.customerStats}>
@@ -581,12 +547,8 @@ export default function OrdersScreen() {
               <Text style={styles.customerStatLabel}>Avg Order</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.rewardButton}>
-            <Ionicons name="gift" size={16} color={config.color} />
-            <Text style={[styles.rewardButtonText, { color: config.color }]}>Send Reward</Text>
-          </TouchableOpacity>
         </View>
-      ))}
+      )))}
 
       {/* Anonymous Insight */}
       <View style={styles.insightCard}>

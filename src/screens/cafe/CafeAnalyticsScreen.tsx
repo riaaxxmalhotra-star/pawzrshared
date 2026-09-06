@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   RefreshControl,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, roleColors } from '../../theme/colors';
+import { cafesApi } from '../../lib/api';
+import logger from '../../lib/logger';
 
 // Use centralized role color
 const CAFE_COLOR = roleColors.CAFE;
@@ -35,10 +38,68 @@ export default function CafeAnalyticsScreen() {
   const navigation = useNavigation<any>();
   const [activeRange, setActiveRange] = useState<TimeRange>('week');
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [overview, setOverview] = useState({ totalRevenue: 0, totalBookings: 0, avgOrderValue: 0 });
+  const [series, setSeries] = useState<RevenueData[]>([]);
+  const [topEvents, setTopEvents] = useState<EventStats[]>([]);
+  const [insights, setInsights] = useState({
+    newCustomers: 0,
+    returningCustomers: 0,
+    retentionRate: 0,
+    avgVisitsPerCustomer: 0,
+  });
+
+  const loadAnalytics = useCallback(async (range: TimeRange) => {
+    setLoadError(null);
+    try {
+      const data = await cafesApi.getAnalytics(range === 'today' ? 'today' : range);
+      const root = data.analytics || data || {};
+      setOverview({
+        totalRevenue: Number(root.totalRevenue ?? root.revenue ?? 0),
+        totalBookings: Number(root.totalBookings ?? root.bookings ?? 0),
+        avgOrderValue: Number(root.avgOrderValue ?? 0),
+      });
+      const rawSeries = root.revenueByDay ?? root.series ?? root.revenueTrend ?? [];
+      setSeries(
+        (Array.isArray(rawSeries) ? rawSeries : []).map((s: any) => ({
+          label: String(s.label ?? s.day ?? s.date ?? ''),
+          value: Number(s.value ?? s.revenue ?? s.total ?? 0),
+        })).filter((s: RevenueData) => s.label !== '')
+      );
+      const rawEvents = root.topEvents ?? root.events ?? [];
+      setTopEvents(
+        (Array.isArray(rawEvents) ? rawEvents : []).map((e: any) => ({
+          name: String(e.name ?? e.title ?? 'Event'),
+          bookings: Number(e.bookings ?? e.bookingCount ?? 0),
+          revenue: Number(e.revenue ?? 0),
+          rating: Number(e.rating ?? 0),
+        }))
+      );
+      const ci = root.customerInsights ?? root.customers ?? {};
+      setInsights({
+        newCustomers: Number(ci.newCustomers ?? 0),
+        returningCustomers: Number(ci.returningCustomers ?? ci.returning ?? 0),
+        retentionRate: Number(ci.retentionRate ?? 0),
+        avgVisitsPerCustomer: Number(ci.avgVisitsPerCustomer ?? ci.avgVisits ?? 0),
+      });
+    } catch (error) {
+      logger.error('Failed to load cafe analytics:', error);
+      setLoadError(error instanceof Error ? error.message : 'Could not load analytics.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    loadAnalytics(activeRange);
+  }, [activeRange, loadAnalytics]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    loadAnalytics(activeRange);
   };
 
   const timeRanges: { id: TimeRange; label: string }[] = [
@@ -48,67 +109,7 @@ export default function CafeAnalyticsScreen() {
     { id: 'year', label: 'This Year' },
   ];
 
-  // Mock analytics data
-  const overviewStats = {
-    totalRevenue: activeRange === 'today' ? 8500 : activeRange === 'week' ? 45600 : activeRange === 'month' ? 186400 : 2245000,
-    totalBookings: activeRange === 'today' ? 12 : activeRange === 'week' ? 78 : activeRange === 'month' ? 324 : 3892,
-    avgOrderValue: activeRange === 'today' ? 708 : activeRange === 'week' ? 585 : activeRange === 'month' ? 575 : 577,
-    revenueGrowth: 12.5,
-    bookingsGrowth: 8.3,
-  };
-
-  const revenueData: RevenueData[] = activeRange === 'week' ? [
-    { label: 'Mon', value: 4200 },
-    { label: 'Tue', value: 5800 },
-    { label: 'Wed', value: 6200 },
-    { label: 'Thu', value: 7500 },
-    { label: 'Fri', value: 9800 },
-    { label: 'Sat', value: 12100 },
-    { label: 'Sun', value: 8500 },
-  ] : [
-    { label: 'W1', value: 38000 },
-    { label: 'W2', value: 42000 },
-    { label: 'W3', value: 48000 },
-    { label: 'W4', value: 58400 },
-  ];
-
-  const maxRevenue = Math.max(...revenueData.map(d => d.value));
-
-  const topEvents: EventStats[] = [
-    { name: 'Sunday Pet Meetup', bookings: 156, revenue: 46800, rating: 4.9 },
-    { name: 'Adoption Drive', bookings: 89, revenue: 0, rating: 4.8 },
-    { name: 'Birthday Parties', bookings: 42, revenue: 63000, rating: 4.7 },
-    { name: 'Photo Sessions', bookings: 38, revenue: 18962, rating: 4.9 },
-  ];
-
-  const bookingsBySource = [
-    { source: 'App Direct', percentage: 45, color: CAFE_COLOR },
-    { source: 'Events', percentage: 30, color: '#8B5CF6' },
-    { source: 'Walk-ins', percentage: 15, color: '#F59E0B' },
-    { source: 'Referrals', percentage: 10, color: '#10B981' },
-  ];
-
-  const peakHours = [
-    { hour: '10 AM', bookings: 8 },
-    { hour: '11 AM', bookings: 15 },
-    { hour: '12 PM', bookings: 22 },
-    { hour: '1 PM', bookings: 18 },
-    { hour: '2 PM', bookings: 12 },
-    { hour: '3 PM', bookings: 25 },
-    { hour: '4 PM', bookings: 32 },
-    { hour: '5 PM', bookings: 28 },
-    { hour: '6 PM', bookings: 20 },
-    { hour: '7 PM', bookings: 15 },
-  ];
-
-  const maxBookings = Math.max(...peakHours.map(h => h.bookings));
-
-  const customerInsights = {
-    newCustomers: 45,
-    returningCustomers: 156,
-    retentionRate: 78,
-    avgVisitsPerCustomer: 3.2,
-  };
+  const maxRevenue = Math.max(1, ...series.map(d => d.value));
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -127,6 +128,26 @@ export default function CafeAnalyticsScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={CAFE_COLOR} />}
       >
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={CAFE_COLOR} />
+            <Text style={styles.centerStateText}>Loading analytics...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.centerState}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+            <Text style={styles.centerStateTitle}>Could not load analytics</Text>
+            <Text style={styles.centerStateText}>{loadError}</Text>
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: CAFE_COLOR }]}
+              onPress={() => { setLoading(true); loadAnalytics(activeRange); }}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        <>
+
         {/* Time Range Selector */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeRangeScroll}>
           {timeRanges.map((range) => (
@@ -147,12 +168,8 @@ export default function CafeAnalyticsScreen() {
           <View style={[styles.overviewCard, styles.revenueCard]}>
             <View style={styles.overviewHeader}>
               <Text style={styles.overviewLabel}>Total Revenue</Text>
-              <View style={[styles.growthBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                <Ionicons name="trending-up" size={12} color={colors.white} />
-                <Text style={styles.growthText}>+{overviewStats.revenueGrowth}%</Text>
-              </View>
             </View>
-            <Text style={styles.revenueValue}>{overviewStats.totalRevenue.toLocaleString()}</Text>
+            <Text style={styles.revenueValue}>{overview.totalRevenue.toLocaleString()}</Text>
             <Text style={styles.revenueCurrency}>INR</Text>
           </View>
 
@@ -161,18 +178,14 @@ export default function CafeAnalyticsScreen() {
               <View style={[styles.statIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
                 <Ionicons name="calendar" size={20} color={CAFE_COLOR} />
               </View>
-              <Text style={styles.statValue}>{overviewStats.totalBookings}</Text>
+              <Text style={styles.statValue}>{overview.totalBookings}</Text>
               <Text style={styles.statLabel}>Bookings</Text>
-              <View style={[styles.growthBadge, { backgroundColor: '#10B98115' }]}>
-                <Ionicons name="trending-up" size={10} color="#10B981" />
-                <Text style={[styles.growthText, { color: '#10B981' }]}>+{overviewStats.bookingsGrowth}%</Text>
-              </View>
             </View>
             <View style={[styles.statCard, { flex: 1 }]}>
               <View style={[styles.statIcon, { backgroundColor: '#8B5CF615' }]}>
                 <Ionicons name="receipt" size={20} color="#8B5CF6" />
               </View>
-              <Text style={styles.statValue}>{overviewStats.avgOrderValue}</Text>
+              <Text style={styles.statValue}>{overview.avgOrderValue}</Text>
               <Text style={styles.statLabel}>Avg. Order</Text>
               <Text style={styles.statSubtext}>INR per visit</Text>
             </View>
@@ -180,11 +193,12 @@ export default function CafeAnalyticsScreen() {
         </View>
 
         {/* Revenue Chart */}
+        {series.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Revenue Trend</Text>
           <View style={styles.chartContainer}>
             <View style={styles.barChart}>
-              {revenueData.map((data, index) => (
+              {series.map((data, index) => (
                 <View key={index} style={styles.barContainer}>
                   <Text style={styles.barValue}>{(data.value / 1000).toFixed(1)}K</Text>
                   <View style={styles.barBackground}>
@@ -193,7 +207,7 @@ export default function CafeAnalyticsScreen() {
                         styles.bar,
                         {
                           height: `${(data.value / maxRevenue) * 100}%`,
-                          backgroundColor: index === revenueData.length - 1 ? CAFE_COLOR : `${CAFE_COLOR}60`,
+                          backgroundColor: index === series.length - 1 ? CAFE_COLOR : `${CAFE_COLOR}60`,
                         },
                       ]}
                     />
@@ -204,6 +218,7 @@ export default function CafeAnalyticsScreen() {
             </View>
           </View>
         </View>
+        )}
 
         {/* Top Events */}
         <View style={styles.section}>
@@ -213,7 +228,10 @@ export default function CafeAnalyticsScreen() {
               <Text style={[styles.seeAllText, { color: CAFE_COLOR }]}>See All</Text>
             </TouchableOpacity>
           </View>
-          {topEvents.map((event, index) => (
+          {topEvents.length === 0 ? (
+            <Text style={styles.emptySectionText}>No event data for this period yet.</Text>
+          ) : (
+          topEvents.map((event, index) => (
             <View key={index} style={styles.eventRow}>
               <View style={styles.eventRank}>
                 <Text style={styles.eventRankText}>{index + 1}</Text>
@@ -223,73 +241,19 @@ export default function CafeAnalyticsScreen() {
                 <View style={styles.eventMeta}>
                   <Ionicons name="people" size={12} color={colors.gray[400]} />
                   <Text style={styles.eventMetaText}>{event.bookings} bookings</Text>
+                  {event.rating > 0 && (
                   <View style={styles.ratingBadge}>
                     <Ionicons name="star" size={10} color="#F59E0B" />
-                    <Text style={styles.ratingText}>{event.rating}</Text>
+                    <Text style={styles.ratingText}>{event.rating.toFixed(1)}</Text>
                   </View>
+                  )}
                 </View>
               </View>
               <Text style={styles.eventRevenue}>
                 {event.revenue > 0 ? `${(event.revenue / 1000).toFixed(1)}K` : 'Free'}
               </Text>
             </View>
-          ))}
-        </View>
-
-        {/* Booking Sources */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Booking Sources</Text>
-          <View style={styles.sourcesCard}>
-            <View style={styles.progressBarContainer}>
-              {bookingsBySource.map((source, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.progressSegment,
-                    { width: `${source.percentage}%`, backgroundColor: source.color },
-                  ]}
-                />
-              ))}
-            </View>
-            <View style={styles.sourceLegend}>
-              {bookingsBySource.map((source, index) => (
-                <View key={index} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: source.color }]} />
-                  <Text style={styles.legendText}>{source.source}</Text>
-                  <Text style={styles.legendPercentage}>{source.percentage}%</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        {/* Peak Hours */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Peak Hours</Text>
-          <View style={styles.peakHoursCard}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {peakHours.map((hour, index) => (
-                <View key={index} style={styles.hourBar}>
-                  <View style={styles.hourBarBackground}>
-                    <View
-                      style={[
-                        styles.hourBarFill,
-                        {
-                          height: `${(hour.bookings / maxBookings) * 100}%`,
-                          backgroundColor: hour.bookings === maxBookings ? CAFE_COLOR : `${CAFE_COLOR}50`,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.hourLabel}>{hour.hour}</Text>
-                </View>
-              ))}
-            </ScrollView>
-            <View style={styles.peakNote}>
-              <Ionicons name="information-circle" size={16} color={CAFE_COLOR} />
-              <Text style={styles.peakNoteText}>Peak time: 4 PM - 5 PM with 32 bookings</Text>
-            </View>
-          </View>
+          )))}
         </View>
 
         {/* Customer Insights */}
@@ -300,59 +264,37 @@ export default function CafeAnalyticsScreen() {
               <View style={[styles.insightIcon, { backgroundColor: '#10B98115' }]}>
                 <Ionicons name="person-add" size={20} color="#10B981" />
               </View>
-              <Text style={styles.insightValue}>{customerInsights.newCustomers}</Text>
+              <Text style={styles.insightValue}>{insights.newCustomers}</Text>
               <Text style={styles.insightLabel}>New Customers</Text>
             </View>
             <View style={styles.insightCard}>
               <View style={[styles.insightIcon, { backgroundColor: '#8B5CF615' }]}>
                 <Ionicons name="refresh" size={20} color="#8B5CF6" />
               </View>
-              <Text style={styles.insightValue}>{customerInsights.returningCustomers}</Text>
+              <Text style={styles.insightValue}>{insights.returningCustomers}</Text>
               <Text style={styles.insightLabel}>Returning</Text>
             </View>
             <View style={styles.insightCard}>
               <View style={[styles.insightIcon, { backgroundColor: '#F59E0B15' }]}>
                 <Ionicons name="heart" size={20} color="#F59E0B" />
               </View>
-              <Text style={styles.insightValue}>{customerInsights.retentionRate}%</Text>
+              <Text style={styles.insightValue}>{insights.retentionRate}%</Text>
               <Text style={styles.insightLabel}>Retention Rate</Text>
             </View>
             <View style={styles.insightCard}>
               <View style={[styles.insightIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
                 <Ionicons name="repeat" size={20} color={CAFE_COLOR} />
               </View>
-              <Text style={styles.insightValue}>{customerInsights.avgVisitsPerCustomer}</Text>
+              <Text style={styles.insightValue}>{insights.avgVisitsPerCustomer}</Text>
               <Text style={styles.insightLabel}>Avg. Visits</Text>
             </View>
           </View>
         </View>
 
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.quickAction}>
-              <View style={[styles.quickActionIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
-                <Ionicons name="download" size={20} color={CAFE_COLOR} />
-              </View>
-              <Text style={styles.quickActionText}>Export Report</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickAction}>
-              <View style={[styles.quickActionIcon, { backgroundColor: '#8B5CF615' }]}>
-                <Ionicons name="mail" size={20} color="#8B5CF6" />
-              </View>
-              <Text style={styles.quickActionText}>Email Report</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickAction}>
-              <View style={[styles.quickActionIcon, { backgroundColor: '#10B98115' }]}>
-                <Ionicons name="calendar" size={20} color="#10B981" />
-              </View>
-              <Text style={styles.quickActionText}>Schedule</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         <View style={{ height: 100 }} />
+        <View style={{ height: 100 }} />
+        </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -360,6 +302,12 @@ export default function CafeAnalyticsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  centerState: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24 },
+  centerStateTitle: { fontSize: 17, fontWeight: '700', color: colors.gray[800], marginTop: 16, textAlign: 'center' },
+  centerStateText: { fontSize: 14, color: colors.gray[500], marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  retryButton: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
+  emptySectionText: { fontSize: 14, color: colors.gray[500], fontStyle: 'italic' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
