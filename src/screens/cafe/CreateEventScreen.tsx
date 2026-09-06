@@ -16,11 +16,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../../theme/colors';
+import { colors, roleColors } from '../../theme/colors';
 import { eventsApi } from '../../lib/api';
 import logger from '../../lib/logger';
 
-const CAFE_COLOR = '#14B8A6';
+const CAFE_COLOR = roleColors.CAFE;
 
 const eventTypes = [
   { id: 'meetup', label: 'Pet Meetup', icon: 'people', emoji: '🐕' },

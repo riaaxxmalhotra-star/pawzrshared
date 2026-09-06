@@ -17,12 +17,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { colors } from '../theme/colors';
+import { colors, getRoleColor } from '../theme/colors';
+import { useAuth } from '../lib/auth';
 import { eventsApi } from '../lib/api';
 import logger from '../lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CAFE_COLOR = '#14B8A6';
 
 interface EventDetail {
   id: string;
@@ -56,6 +56,11 @@ export default function EventDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const eventId = route.params?.eventId;
+  const { user } = useAuth();
+  // Viewer-role accent: CAFE staff keep the teal brand; OWNER/LOVER consumers
+  // see their orange tab color instead of a mismatched teal.
+  const ACCENT = getRoleColor(user?.role || 'OWNER');
+  const styles = createStyles(ACCENT);
 
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [guestCount, setGuestCount] = useState(1);
@@ -123,7 +128,7 @@ export default function EventDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={CAFE_COLOR} />
+          <ActivityIndicator size="large" color={ACCENT} />
         </View>
       </SafeAreaView>
     );
@@ -259,9 +264,9 @@ export default function EventDetailScreen() {
         {/* Event Info */}
         <View style={styles.content}>
           {/* Type Badge */}
-          <View style={[styles.typeBadge, { backgroundColor: `${CAFE_COLOR}15` }]}>
-            <Ionicons name={eventTypeIcons[event.eventType] as any || 'calendar'} size={14} color={CAFE_COLOR} />
-            <Text style={[styles.typeText, { color: CAFE_COLOR }]}>{eventTypeLabels[event.eventType]}</Text>
+          <View style={[styles.typeBadge, { backgroundColor: `${ACCENT}15` }]}>
+            <Ionicons name={eventTypeIcons[event.eventType] as any || 'calendar'} size={14} color={ACCENT} />
+            <Text style={[styles.typeText, { color: ACCENT }]}>{eventTypeLabels[event.eventType]}</Text>
           </View>
 
           {/* Title & Price */}
@@ -276,8 +281,8 @@ export default function EventDetailScreen() {
           {/* Date & Time */}
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
-              <View style={[styles.infoIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
-                <Ionicons name="calendar" size={20} color={CAFE_COLOR} />
+              <View style={[styles.infoIcon, { backgroundColor: `${ACCENT}15` }]}>
+                <Ionicons name="calendar" size={20} color={ACCENT} />
               </View>
               <View>
                 <Text style={styles.infoLabel}>Date</Text>
@@ -286,8 +291,8 @@ export default function EventDetailScreen() {
             </View>
             <View style={styles.infoDivider} />
             <View style={styles.infoRow}>
-              <View style={[styles.infoIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
-                <Ionicons name="time" size={20} color={CAFE_COLOR} />
+              <View style={[styles.infoIcon, { backgroundColor: `${ACCENT}15` }]}>
+                <Ionicons name="time" size={20} color={ACCENT} />
               </View>
               <View>
                 <Text style={styles.infoLabel}>Time</Text>
@@ -299,7 +304,7 @@ export default function EventDetailScreen() {
           {/* Capacity */}
           <View style={styles.capacityCard}>
             <View style={styles.capacityInfo}>
-              <Ionicons name="people" size={20} color={isSoldOut ? '#EF4444' : CAFE_COLOR} />
+              <Ionicons name="people" size={20} color={isSoldOut ? '#EF4444' : ACCENT} />
               <Text style={styles.capacityText}>
                 {isSoldOut ? 'Sold Out' : `${spotsLeft} spots left`}
               </Text>
@@ -310,7 +315,7 @@ export default function EventDetailScreen() {
                   styles.capacityFill,
                   {
                     width: `${(event.bookedCount / event.capacity) * 100}%`,
-                    backgroundColor: isSoldOut ? '#EF4444' : CAFE_COLOR,
+                    backgroundColor: isSoldOut ? '#EF4444' : ACCENT,
                   },
                 ]}
               />
@@ -379,7 +384,7 @@ export default function EventDetailScreen() {
             <View style={styles.tagsContainer}>
               {event.petTypes.map((pet, index) => (
                 <View key={index} style={styles.tag}>
-                  <Ionicons name="paw" size={14} color={CAFE_COLOR} />
+                  <Ionicons name="paw" size={14} color={ACCENT} />
                   <Text style={styles.tagText}>{pet}</Text>
                 </View>
               ))}
@@ -427,7 +432,7 @@ export default function EventDetailScreen() {
             <Text style={styles.contactLabel}>Organized by</Text>
             <Text style={styles.contactName}>{event.organizer.name}</Text>
             <TouchableOpacity style={styles.contactButton}>
-              <Ionicons name="chatbubble-outline" size={18} color={CAFE_COLOR} />
+              <Ionicons name="chatbubble-outline" size={18} color={ACCENT} />
               <Text style={styles.contactButtonText}>Contact Organizer</Text>
             </TouchableOpacity>
           </View>
@@ -487,14 +492,14 @@ export default function EventDetailScreen() {
                   style={styles.counterButton}
                   onPress={() => setGuestCount(Math.max(1, guestCount - 1))}
                 >
-                  <Ionicons name="remove" size={24} color={CAFE_COLOR} />
+                  <Ionicons name="remove" size={24} color={ACCENT} />
                 </TouchableOpacity>
                 <Text style={styles.counterValue}>{guestCount}</Text>
                 <TouchableOpacity
                   style={styles.counterButton}
                   onPress={() => setGuestCount(Math.min(spotsLeft, guestCount + 1))}
                 >
-                  <Ionicons name="add" size={24} color={CAFE_COLOR} />
+                  <Ionicons name="add" size={24} color={ACCENT} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -552,14 +557,14 @@ export default function EventDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (ACCENT: string) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
   centerState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   centerStateText: { fontSize: 15, color: colors.gray[500], marginTop: 12, textAlign: 'center', lineHeight: 22 },
-  retryButton: { marginTop: 16, backgroundColor: CAFE_COLOR, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButton: { marginTop: 16, backgroundColor: ACCENT, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   retryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
   backLink: { marginTop: 12, paddingVertical: 8 },
-  backLinkText: { fontSize: 14, fontWeight: '600', color: CAFE_COLOR },
+  backLinkText: { fontSize: 14, fontWeight: '600', color: ACCENT },
   heroContainer: { height: 300, position: 'relative' },
   heroImage: { width: '100%', height: '100%' },
   heroOverlay: {
@@ -607,7 +612,7 @@ const styles = StyleSheet.create({
   typeText: { fontSize: 13, fontWeight: '600' },
   title: { fontSize: 26, fontWeight: 'bold', color: colors.gray[900], marginBottom: 8 },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 20 },
-  price: { fontSize: 24, fontWeight: 'bold', color: CAFE_COLOR },
+  price: { fontSize: 24, fontWeight: 'bold', color: ACCENT },
   priceNote: { fontSize: 14, color: colors.gray[500], marginLeft: 4 },
   infoCard: {
     backgroundColor: colors.gray[50],
@@ -652,7 +657,7 @@ const styles = StyleSheet.create({
   locationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.gray[200] },
   locationInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   locationText: { fontSize: 14, color: colors.gray[600], marginLeft: 8, flex: 1 },
-  directionsButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: CAFE_COLOR, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 4 },
+  directionsButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: ACCENT, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 4 },
   directionsButtonText: { fontSize: 12, fontWeight: '600', color: colors.white },
   section: { marginBottom: 24 },
   description: { fontSize: 15, color: colors.gray[700], lineHeight: 24 },
@@ -660,13 +665,13 @@ const styles = StyleSheet.create({
   tag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: `${CAFE_COLOR}15`,
+    backgroundColor: `${ACCENT}15`,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
   },
-  tagText: { fontSize: 14, color: CAFE_COLOR, fontWeight: '500' },
+  tagText: { fontSize: 14, color: ACCENT, fontWeight: '500' },
   amenityTag: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -695,10 +700,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: CAFE_COLOR,
+    borderColor: ACCENT,
     gap: 8,
   },
-  contactButtonText: { fontSize: 14, fontWeight: '600', color: CAFE_COLOR },
+  contactButtonText: { fontSize: 14, fontWeight: '600', color: ACCENT },
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -722,7 +727,7 @@ const styles = StyleSheet.create({
   bottomPriceLabel: { fontSize: 13, color: colors.gray[500] },
   bottomPriceValue: { fontSize: 24, fontWeight: 'bold', color: colors.gray[900] },
   bookButton: {
-    backgroundColor: CAFE_COLOR,
+    backgroundColor: ACCENT,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 16,
@@ -760,7 +765,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: `${CAFE_COLOR}15`,
+    backgroundColor: `${ACCENT}15`,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -789,7 +794,7 @@ const styles = StyleSheet.create({
   priceLineValue: { fontSize: 14, fontWeight: '600', color: colors.gray[900] },
   totalLine: { borderTopWidth: 1, borderTopColor: colors.gray[200], paddingTop: 12, marginTop: 8 },
   totalLabel: { fontSize: 16, fontWeight: '700', color: colors.gray[900] },
-  totalValue: { fontSize: 20, fontWeight: 'bold', color: CAFE_COLOR },
+  totalValue: { fontSize: 20, fontWeight: 'bold', color: ACCENT },
   modalFooter: {
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -798,7 +803,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.gray[100],
   },
   confirmButton: {
-    backgroundColor: CAFE_COLOR,
+    backgroundColor: ACCENT,
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',

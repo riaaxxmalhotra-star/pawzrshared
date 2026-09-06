@@ -17,8 +17,10 @@ platform :ios do
     deliver(
       api_key: api_key,
       app_identifier: "com.pawzr.app",
+      # Must match package.json version + app.config.js ios.buildNumber.
+      # Bump package.json first, then the native build numbers, then this lane.
       app_version: "1.3.0",
-      build_number: "40",
+      build_number: "46",
       skip_binary_upload: true,
       skip_screenshots: true,
       skip_metadata: false,

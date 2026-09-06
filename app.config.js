@@ -46,7 +46,9 @@ module.exports = {
   name: 'Pawzr',
   slug: 'pawzr',
   owner: 'riaaxxmalhotra',
-  version: '1.3.0',
+  // Single-sourced from package.json — bump there, never here, so the store
+  // version, OTA runtimeVersion, and Fastfile metadata can't drift apart.
+  version: require('./package.json').version,
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',

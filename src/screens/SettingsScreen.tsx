@@ -139,7 +139,7 @@ export default function SettingsScreen() {
             onPress={() => WebBrowser.openBrowserAsync('https://pawzrpro.vercel.app/privacy')}
           >
             <View style={styles.settingLeft}>
-              <View style={[styles.settingIcon, { backgroundColor: '#F5970B15' }]}>
+              <View style={[styles.settingIcon, { backgroundColor: '#F59E0B15' }]}>
                 <Ionicons name="shield" size={20} color="#F59E0B" />
               </View>
               <View>

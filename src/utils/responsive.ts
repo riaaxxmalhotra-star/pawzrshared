@@ -3,16 +3,24 @@ import { Dimensions, Platform, ScaledSize } from 'react-native';
 // Get initial dimensions
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Device type detection
-export const isTablet = (): boolean => {
-  const aspectRatio = SCREEN_HEIGHT / SCREEN_WIDTH;
-  // Tablets typically have aspect ratios closer to 1 (more square)
-  // Phones have aspect ratios around 1.7-2.2
-  return Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) >= 600 || aspectRatio < 1.6;
+export interface WindowDims {
+  width: number;
+  height: number;
+}
+
+// Device type detection. Accepts optional dimensions so callers using
+// useWindowDimensions() re-render on rotation — the module-level snapshot
+// above freezes at launch. Landscape phones are NOT tablets: only the
+// smallest-side >= 600dp rule applies (the old aspect-ratio clause wrongly
+// classified every landscape phone as a tablet).
+export const isTablet = (dims?: WindowDims): boolean => {
+  const { width, height } = dims ?? { width: SCREEN_WIDTH, height: SCREEN_HEIGHT };
+  return Math.min(width, height) >= 600;
 };
 
-export const isLargeTablet = (): boolean => {
-  return Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) >= 768;
+export const isLargeTablet = (dims?: WindowDims): boolean => {
+  const { width, height } = dims ?? { width: SCREEN_WIDTH, height: SCREEN_HEIGHT };
+  return Math.min(width, height) >= 768;
 };
 
 // Breakpoints
@@ -93,7 +101,7 @@ export const getGridColumns = (): number => {
 // Tab bar dimensions
 export const getTabBarHeight = (): number => {
   const device = getDeviceType();
-  if (device === 'largeTablet') return 70;
+  if (device === 'largeTablet') return 80;
   if (device === 'tablet') return 75;
   return Platform.OS === 'ios' ? 85 : 70;
 };
@@ -102,7 +110,8 @@ export const getTabBarFontSize = (): number => {
   const device = getDeviceType();
   if (device === 'largeTablet') return 13;
   if (device === 'tablet') return 12;
-  return 11;
+  // 12sp minimum: 11sp tab labels fail WCAG contrast/size guidance.
+  return 12;
 };
 
 // Font scaling with limits for tablet

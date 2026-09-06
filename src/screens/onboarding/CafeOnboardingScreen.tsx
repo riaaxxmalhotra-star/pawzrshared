@@ -17,10 +17,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../lib/auth';
-import { colors } from '../../theme/colors';
+import { colors, roleColors } from '../../theme/colors';
 import logger from '../../lib/logger';
 
-const CAFE_COLOR = '#14B8A6';
+const CAFE_COLOR = roleColors.CAFE;
 
 export default function CafeOnboardingScreen() {
   const navigation = useNavigation<any>();

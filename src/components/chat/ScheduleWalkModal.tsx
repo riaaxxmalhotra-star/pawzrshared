@@ -104,12 +104,12 @@ export default function ScheduleWalkModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close schedule walk dialog">
               <Ionicons name="close" size={24} color={colors.gray[600]} />
             </TouchableOpacity>
             <Text style={styles.title}>Schedule a Walk</Text>

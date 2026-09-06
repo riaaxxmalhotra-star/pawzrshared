@@ -14,11 +14,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { colors } from '../theme/colors';
+import { colors, getRoleColor } from '../theme/colors';
+import { useAuth } from '../lib/auth';
 import { eventsApi, cafesApi } from '../lib/api';
 import logger from '../lib/logger';
-
-const CAFE_COLOR = '#14B8A6';
 
 type FilterType = 'all' | 'meetup' | 'adoption' | 'birthday' | 'workshop' | 'photoshoot' | 'competition';
 
@@ -96,6 +95,11 @@ function normalizeCafe(item: any): Cafe | null {
 
 export default function EventsListScreen() {
   const navigation = useNavigation<any>();
+  const { user } = useAuth();
+  // Viewer-role accent: CAFE staff keep the teal brand; OWNER/LOVER consumers
+  // see their orange tab color instead of a mismatched teal.
+  const ACCENT = getRoleColor(user?.role || 'OWNER');
+  const styles = createStyles(ACCENT);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -181,7 +185,7 @@ export default function EventsListScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Events & Cafes</Text>
         <TouchableOpacity style={styles.mapButton}>
-          <Ionicons name="map" size={20} color={CAFE_COLOR} />
+          <Ionicons name="map" size={20} color={ACCENT} />
         </TouchableOpacity>
       </View>
 
@@ -222,7 +226,7 @@ export default function EventsListScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={CAFE_COLOR} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
       >
         {/* Featured Events */}
         <View style={styles.sectionHeader}>
@@ -232,7 +236,7 @@ export default function EventsListScreen() {
 
         {loading ? (
           <View style={styles.emptyState}>
-            <ActivityIndicator size="large" color={CAFE_COLOR} />
+            <ActivityIndicator size="large" color={ACCENT} />
           </View>
         ) : loadError ? (
           <View style={styles.emptyState}>
@@ -305,7 +309,7 @@ export default function EventsListScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Pet-Friendly Cafes</Text>
           <TouchableOpacity>
-            <Text style={[styles.seeAllText, { color: CAFE_COLOR }]}>See All</Text>
+            <Text style={[styles.seeAllText, { color: ACCENT }]}>See All</Text>
           </TouchableOpacity>
         </View>
 
@@ -357,17 +361,17 @@ export default function EventsListScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (ACCENT: string) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12 },
   headerTitle: { fontSize: 28, fontWeight: 'bold', color: colors.gray[900] },
-  mapButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: `${CAFE_COLOR}15`, justifyContent: 'center', alignItems: 'center' },
+  mapButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: `${ACCENT}15`, justifyContent: 'center', alignItems: 'center' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white, marginHorizontal: 20, marginBottom: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.gray[200] },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 15, color: colors.gray[900] },
   filtersScroll: { maxHeight: 50, marginBottom: 8 },
   filtersContainer: { flexDirection: 'row', paddingHorizontal: 20, gap: 8 },
   filterChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.gray[200], gap: 6 },
-  filterChipActive: { backgroundColor: CAFE_COLOR, borderColor: CAFE_COLOR },
+  filterChipActive: { backgroundColor: ACCENT, borderColor: ACCENT },
   filterEmoji: { fontSize: 14 },
   filterText: { fontSize: 13, fontWeight: '500', color: colors.gray[600] },
   filterTextActive: { color: colors.white },
@@ -377,11 +381,11 @@ const styles = StyleSheet.create({
   seeAllText: { fontSize: 14, fontWeight: '600' },
   eventCard: { backgroundColor: colors.white, marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: 'hidden', shadowColor: colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   eventImage: { width: '100%', height: 150 },
-  eventBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: CAFE_COLOR, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  eventBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: ACCENT, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   eventBadgeText: { color: colors.white, fontSize: 13, fontWeight: '700' },
   eventContent: { padding: 16 },
   eventMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  eventDate: { fontSize: 13, color: CAFE_COLOR, fontWeight: '600' },
+  eventDate: { fontSize: 13, color: ACCENT, fontWeight: '600' },
   distanceBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   distanceText: { fontSize: 12, color: colors.gray[500] },
   eventTitle: { fontSize: 18, fontWeight: '700', color: colors.gray[900], marginBottom: 4 },
@@ -389,9 +393,9 @@ const styles = StyleSheet.create({
   eventFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   capacityInfo: { flex: 1, marginRight: 12 },
   capacityBar: { height: 4, backgroundColor: colors.gray[100], borderRadius: 2, marginBottom: 4 },
-  capacityFill: { height: '100%', backgroundColor: CAFE_COLOR, borderRadius: 2 },
+  capacityFill: { height: '100%', backgroundColor: ACCENT, borderRadius: 2 },
   capacityText: { fontSize: 12, color: colors.gray[500] },
-  bookButton: { backgroundColor: CAFE_COLOR, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  bookButton: { backgroundColor: ACCENT, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
   bookButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
   cafesScroll: { paddingLeft: 20 },
   cafeCard: { width: 200, backgroundColor: colors.white, borderRadius: 16, marginRight: 12, overflow: 'hidden', shadowColor: colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
@@ -403,10 +407,10 @@ const styles = StyleSheet.create({
   ratingText: { fontSize: 12, fontWeight: '600', color: colors.gray[700] },
   cafeMeta: { fontSize: 12, color: colors.gray[500] },
   amenitiesRow: { flexDirection: 'row', gap: 6 },
-  amenityBadge: { backgroundColor: `${CAFE_COLOR}15`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  amenityText: { fontSize: 10, color: CAFE_COLOR, fontWeight: '500' },
+  amenityBadge: { backgroundColor: `${ACCENT}15`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  amenityText: { fontSize: 10, color: ACCENT, fontWeight: '500' },
   emptyState: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24 },
   emptyText: { fontSize: 15, color: colors.gray[400], marginTop: 12, textAlign: 'center' },
-  retryButton: { marginTop: 16, backgroundColor: CAFE_COLOR, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButton: { marginTop: 16, backgroundColor: ACCENT, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   retryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
 });

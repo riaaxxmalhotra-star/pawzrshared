@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { colors, roleColors } from '../theme/colors';
 import { apiRequest } from '../lib/api';
 import logger from '../lib/logger';
 
@@ -38,35 +38,35 @@ const roleOptions: RoleOption[] = [
     title: 'Pet Owner',
     description: 'I have pets and want to find services',
     icon: 'paw',
-    color: colors.primary,
+    color: roleColors.OWNER,
   },
   {
     id: 'VET',
     title: 'Veterinarian',
     description: 'I provide veterinary services',
     icon: 'medical',
-    color: '#10B981',
+    color: roleColors.VET,
   },
   {
     id: 'GROOMER',
     title: 'Pet Groomer',
     description: 'I provide grooming services',
     icon: 'cut',
-    color: '#8B5CF6',
+    color: roleColors.GROOMER,
   },
   {
     id: 'SUPPLIER',
     title: 'Pet Supplier',
     description: 'I sell pet products',
     icon: 'storefront',
-    color: '#3B82F6',
+    color: roleColors.SUPPLIER,
   },
   {
     id: 'LOVER',
     title: 'Pet Lover',
     description: 'I offer pet walking & sitting',
     icon: 'heart',
-    color: '#F97316',
+    color: roleColors.LOVER,
   },
 ];
 
@@ -239,7 +239,8 @@ export default function OnboardingScreen({ onComplete, userId }: Props) {
     }
   };
 
-  const getRoleColor = () => {
+  // Local helper (not the theme role color): tint from the selected onboarding option.
+  const getSelectedRoleColor = () => {
     if (!selectedRole) return colors.primary;
     return roleOptions.find(r => r.id === selectedRole)?.color || colors.primary;
   };
@@ -708,7 +709,7 @@ export default function OnboardingScreen({ onComplete, userId }: Props) {
                 key={index}
                 style={[
                   styles.progressDot,
-                  index < step && { backgroundColor: getRoleColor() },
+                  index < step && { backgroundColor: getSelectedRoleColor() },
                   index === step - 1 && styles.progressDotCurrent,
                 ]}
               />
@@ -732,7 +733,7 @@ export default function OnboardingScreen({ onComplete, userId }: Props) {
           <TouchableOpacity
             style={[
               styles.continueBtn,
-              { backgroundColor: getRoleColor() },
+              { backgroundColor: getSelectedRoleColor() },
             ]}
             onPress={step === getTotalSteps() ? handleComplete : nextStep}
             disabled={saving}

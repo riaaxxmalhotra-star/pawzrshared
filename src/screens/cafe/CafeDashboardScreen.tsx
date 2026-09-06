@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,45 +6,119 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../lib/auth';
 import { colors, roleColors } from '../../theme/colors';
+import { eventsApi, cafesApi } from '../../lib/api';
+import logger from '../../lib/logger';
 
 // Use centralized role color
 const CAFE_COLOR = roleColors.CAFE;
 
+interface DashboardEvent {
+  id: string;
+  title: string;
+  date: string;
+  attendees: number;
+  capacity: number;
+}
+
+interface DashboardBooking {
+  id: string;
+  name: string;
+  guests: number;
+  time: string;
+  status: string;
+}
+
+function displayDate(value: unknown): string {
+  if (typeof value !== 'string' || value === '') return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 export default function CafeDashboardScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [upcomingEvents, setUpcomingEvents] = useState<DashboardEvent[]>([]);
+  const [recentBookings, setRecentBookings] = useState<DashboardBooking[]>([]);
+  const [todayStats, setTodayStats] = useState({ bookings: 0, revenue: 0, upcomingEvents: 0, pendingBookings: 0 });
 
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+  // Real data from the cafe's own events + bookings. No mock fallback and no
+  // fabricated rating/visitor metrics — empty/error states are honest.
+  const loadDashboard = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const [eventsData, bookingsData] = await Promise.all([
+        eventsApi.getMyEvents(),
+        cafesApi.getMyBookings(),
+      ]);
+      const eventList = eventsData.events ?? eventsData.data ?? eventsData ?? [];
+      const bookingList = bookingsData.bookings ?? bookingsData.data ?? bookingsData ?? [];
+      const events = (Array.isArray(eventList) ? eventList : [])
+        .map((item: any): DashboardEvent | null => {
+          const id = item?.id ?? item?._id;
+          if (id === undefined || id === null) return null;
+          return {
+            id: String(id),
+            title: item.title ?? 'Untitled event',
+            date: displayDate(item.date),
+            attendees: Number(item.bookedCount ?? item.booked ?? 0),
+            capacity: Number(item.capacity ?? 0),
+          };
+        })
+        .filter((e): e is DashboardEvent => e !== null);
+      const bookings = (Array.isArray(bookingList) ? bookingList : [])
+        .map((b: any, index: number): DashboardBooking => ({
+          id: String(b?.id ?? b?._id ?? index),
+          name: b?.customerName ?? b?.user?.name ?? b?.customer?.name ?? 'Customer',
+          guests: Number(b?.partySize ?? b?.guestCount ?? 1),
+          time: b?.time ?? displayDate(b?.date),
+          status: b?.status ?? 'pending',
+        }));
+      setUpcomingEvents(events.slice(0, 3));
+      setRecentBookings(bookings.slice(0, 3));
+      setTodayStats({
+        bookings: bookings.length,
+        revenue: (Array.isArray(bookingList) ? bookingList : []).reduce(
+          (s: number, b: any) => s + Number(b?.totalAmount ?? b?.amount ?? b?.price ?? 0), 0),
+        upcomingEvents: events.length,
+        pendingBookings: bookings.filter((b) => b.status === 'pending').length,
+      });
+    } catch (error) {
+      logger.error('Failed to load cafe dashboard:', error);
+      setUpcomingEvents([]);
+      setRecentBookings([]);
+      setTodayStats({ bookings: 0, revenue: 0, upcomingEvents: 0, pendingBookings: 0 });
+      setLoadError(error instanceof Error ? error.message : 'Could not load dashboard.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  // Mock data - will be replaced with API data
-  const todayStats = {
-    bookings: 12,
-    revenue: 8500,
-    upcomingEvents: 3,
-    pendingBookings: 4,
-  };
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
 
-  const upcomingEvents = [
-    { id: '1', title: 'Pet Meetup Sunday', date: 'Sun, Feb 16', attendees: 24, capacity: 30 },
-    { id: '2', title: 'Adoption Drive', date: 'Sat, Feb 22', attendees: 15, capacity: 50 },
-    { id: '3', title: 'Dog Birthday Party', date: 'Sun, Feb 23', attendees: 8, capacity: 15 },
-  ];
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [loadDashboard])
+  );
 
-  const recentBookings = [
-    { id: '1', name: 'Priya Sharma', guests: 4, time: '2:00 PM', status: 'confirmed' },
-    { id: '2', name: 'Rahul Verma', guests: 2, time: '3:30 PM', status: 'pending' },
-    { id: '3', name: 'Anita Desai', guests: 6, time: '5:00 PM', status: 'confirmed' },
-  ];
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadDashboard();
+  }, [loadDashboard]);
 
   const quickActions = [
     { id: 'events', icon: 'calendar', label: 'My Events', screen: 'CafeEvents' },
@@ -70,6 +144,27 @@ export default function CafeDashboardScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={CAFE_COLOR} />}
       >
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={CAFE_COLOR} />
+            <Text style={styles.centerStateText}>Loading dashboard...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.centerState}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+            <Text style={styles.centerStateTitle}>Could not load dashboard</Text>
+            <Text style={styles.centerStateText}>{loadError}</Text>
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: CAFE_COLOR }]}
+              onPress={() => { setLoading(true); loadDashboard(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading dashboard"
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        <>
         {/* Welcome Card */}
         <View style={styles.welcomeCard}>
           <View style={styles.welcomeContent}>
@@ -127,8 +222,17 @@ export default function CafeDashboardScreen() {
           </TouchableOpacity>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.eventsScroll}>
-          {upcomingEvents.map((event) => (
-            <TouchableOpacity key={event.id} style={styles.eventCard}>
+          {upcomingEvents.length === 0 ? (
+            <Text style={styles.emptyListText}>No events yet — create your first one.</Text>
+          ) : (
+          upcomingEvents.map((event) => (
+            <TouchableOpacity
+              key={event.id}
+              style={styles.eventCard}
+              onPress={() => navigation.navigate('EventDetail', { eventId: event.id })}
+              accessibilityRole="button"
+              accessibilityLabel={`View event ${event.title}`}
+            >
               <View style={[styles.eventBadge, { backgroundColor: `${CAFE_COLOR}15` }]}>
                 <Ionicons name="calendar" size={16} color={CAFE_COLOR} />
               </View>
@@ -139,10 +243,10 @@ export default function CafeDashboardScreen() {
                 <Text style={styles.eventCapacityText}>{event.attendees}/{event.capacity}</Text>
               </View>
               <View style={styles.capacityBar}>
-                <View style={[styles.capacityFill, { width: `${(event.attendees / event.capacity) * 100}%`, backgroundColor: CAFE_COLOR }]} />
+                <View style={[styles.capacityFill, { width: `${event.capacity > 0 ? (event.attendees / event.capacity) * 100 : 0}%`, backgroundColor: CAFE_COLOR }]} />
               </View>
             </TouchableOpacity>
-          ))}
+          )))}
           <TouchableOpacity style={styles.createEventCard} onPress={() => navigation.navigate('CreateEvent')}>
             <View style={[styles.createEventIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
               <Ionicons name="add" size={32} color={CAFE_COLOR} />
@@ -159,8 +263,17 @@ export default function CafeDashboardScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.bookingsList}>
-          {recentBookings.map((booking) => (
-            <TouchableOpacity key={booking.id} style={styles.bookingCard}>
+          {recentBookings.length === 0 ? (
+            <Text style={styles.emptyListText}>No bookings yet.</Text>
+          ) : (
+          recentBookings.map((booking) => (
+            <TouchableOpacity
+              key={booking.id}
+              style={styles.bookingCard}
+              onPress={() => navigation.navigate('CafeBookings')}
+              accessibilityRole="button"
+              accessibilityLabel={`Manage booking for ${booking.name}`}
+            >
               <View style={styles.bookingInfo}>
                 <Text style={styles.bookingName}>{booking.name}</Text>
                 <View style={styles.bookingMeta}>
@@ -175,10 +288,10 @@ export default function CafeDashboardScreen() {
                 <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>{booking.status}</Text>
               </View>
             </TouchableOpacity>
-          ))}
+          )))}
         </View>
 
-        {/* Bottom Stats */}
+        {/* Bottom Stats — real counts only. No fabricated rating/visitors. */}
         <View style={styles.bottomStats}>
           <View style={styles.bottomStatCard}>
             <Text style={styles.bottomStatEmoji}>📅</Text>
@@ -186,18 +299,20 @@ export default function CafeDashboardScreen() {
             <Text style={styles.bottomStatLabel}>Events</Text>
           </View>
           <View style={styles.bottomStatCard}>
-            <Text style={styles.bottomStatEmoji}>⭐</Text>
-            <Text style={styles.bottomStatValue}>4.8</Text>
-            <Text style={styles.bottomStatLabel}>Rating</Text>
+            <Text style={styles.bottomStatEmoji}>📖</Text>
+            <Text style={styles.bottomStatValue}>{todayStats.bookings}</Text>
+            <Text style={styles.bottomStatLabel}>Bookings</Text>
           </View>
           <View style={styles.bottomStatCard}>
-            <Text style={styles.bottomStatEmoji}>🐕</Text>
-            <Text style={styles.bottomStatValue}>156</Text>
-            <Text style={styles.bottomStatLabel}>Visitors</Text>
+            <Text style={styles.bottomStatEmoji}>⏳</Text>
+            <Text style={styles.bottomStatValue}>{todayStats.pendingBookings}</Text>
+            <Text style={styles.bottomStatLabel}>Pending</Text>
           </View>
         </View>
 
         <View style={{ height: 100 }} />
+        </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -330,4 +445,10 @@ const styles = StyleSheet.create({
   bottomStatEmoji: { fontSize: 24, marginBottom: 8 },
   bottomStatValue: { fontSize: 20, fontWeight: 'bold', color: colors.gray[900] },
   bottomStatLabel: { fontSize: 12, color: colors.gray[500], marginTop: 4 },
+  emptyListText: { fontSize: 14, color: colors.gray[500], fontStyle: 'italic', paddingVertical: 8 },
+  centerState: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24 },
+  centerStateTitle: { fontSize: 18, fontWeight: '700', color: colors.gray[900], marginTop: 16, textAlign: 'center' },
+  centerStateText: { fontSize: 14, color: colors.gray[500], marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  retryButton: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
 });

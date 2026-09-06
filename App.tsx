@@ -4,6 +4,7 @@ import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Alert } fr
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Updates from 'expo-updates';
 import { AuthProvider } from './src/lib/auth';
 import AppNavigator from './src/navigation/AppNavigator';
 import { navigateFromNotification } from './src/navigation/navigationRef';
@@ -132,6 +133,19 @@ function App() {
 
     // Register for push notifications
     registerForPushNotifications().catch(() => {});
+
+    // OTA updates: runtimeVersion policy is `appVersion`, so an update only
+    // ever applies to the same native build — no version-skew risk. Check once
+    // on launch in production builds; failures are silent by design and the
+    // UI never blocks on this.
+    if (!__DEV__ && Updates.isEnabled) {
+      Updates.checkForUpdateAsync()
+        .then(({ isAvailable }) => (isAvailable ? Updates.fetchUpdateAsync() : null))
+        .then((result) => {
+          if (result) Updates.reloadAsync().catch(() => {});
+        })
+        .catch(() => {});
+    }
 
     // Route notification taps to the right screen (previously just logged).
     const subscription = addNotificationResponseListener((response) => {

@@ -651,7 +651,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Notifications')}>
-              <View style={[styles.actionIcon, { backgroundColor: '#F5970B15' }]}>
+              <View style={[styles.actionIcon, { backgroundColor: '#F59E0B15' }]}>
                 <Ionicons name="notifications" size={26} color="#F59E0B" />
               </View>
               <Text style={styles.actionTitle}>Alerts</Text>

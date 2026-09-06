@@ -105,3 +105,24 @@ Goal: consistent, accessible, shippable artifact.
 ## Verification per wave
 
 `npx tsc --noEmit` after every wave (note: `app/**/*` excluded — add a Next.js check when touching `app/api`) + targeted smoke: Wave 1 auth matrix, Wave 2 onboarding/Aadhaar, Wave 3 chat online/offline, Wave 4 role CRUD + location/push, Wave 5 tablet/a11y + store-submit dry run.
+
+## Wave 5 implementation notes (2026-09-06, branch `fix/audit-remediation`)
+
+Done:
+- Nav correctness: `ProfileScreen` `navigate('Pets')` → registered `MyPets` in `ProfileStack`; cafe Events tab is now `CafeEventsNavigator` (CafeEvents/CreateEvent/EventDetail — both prior navigations crashed); `EventDetail/EventsList/CafeDetail` added to `CafeHomeNavigator` (dashboard cards + deep links); GROOMER 2nd-tab label `Bookings` → `Schedule` (content is Calendar); `MainTabParamList.Chat` carries the optional match params instead of `undefined`.
+- Role colors single-sourced in `src/theme/colors.ts`: deleted duplicate maps in `AppNavigator`, `RoleSelectionScreen`, `PawzrWalletScreen`; `OnboardingScreen` option colors + `CreateEventScreen`/`CafeOnboardingScreen` aliases now reference the theme; local `getRoleColor` renamed to `getSelectedRoleColor` (was shadowing); `#F5970B15` typo → `#F59E0B15` (matches the amber icons).
+- Shared event screens (`EventsList/EventDetail/CafeDetail`) use a viewer-role accent via `createStyles(accent)`: identical teal for CAFE viewers, orange tab-matching chrome for OWNER/LOVER.
+- A11y: `onRequestClose` on all 15 modals (9 were missing); hardcoded `tabBarBadge: 3` removed (no unread-count source); `tabBarAccessibilityLabel` on all tabs; inactive tint `gray[400]` → `gray[500]` (≈2.8:1 → ≈4.8:1 on white); phone tab labels 11sp → 12sp; swipe pass/like buttons + modal close buttons got roles/labels; `CafeDashboard` dead pressables now navigate (events → `EventDetail`, bookings → `CafeBookings`).
+- Wave 4 spillover finished: `CafeEventsScreen` (was mock) fetches `eventsApi.getMyEvents`; `CafeDashboardScreen` (was mock) fetches `getMyEvents` + `cafesApi.getMyBookings`, derives stats, drops fabricated 4.8-rating/156-visitors; capacity bars guard divide-by-zero; `formatDate` guards invalid dates.
+- Money honesty: deleted ~890 lines of dead fake-money code in `PawzrWalletScreen` (mock balances/transactions/rewards/loyalty + 6 unreachable render fns); both wallet surfaces are pure `ComingSoonPanel` + tab chrome.
+- Responsive: `isTablet` landscape-phone bug fixed (smallest-side ≥ 600dp only, optional dims param for `useWindowDimensions` reactivity); `getTabBarHeight` largeTablet inversion fixed (70 → 80); `MainNavigator` uses `useWindowDimensions` instead of the launch-frozen snapshot.
+- Build: version single-sourced (`package.json` 1.3.0 ← `app.config.js` reads it; `Fastfile` build 40 → 46 to match `ios.buildNumber`); `npm run typecheck` script; `.github/workflows/ci.yml` gating `tsc`; OTA `checkForUpdateAsync` on launch (prod only, silent, never blocks UI).
+- Bloat: `git rm capacitor.config.ts`, `assets/placeholder-pet.png` (`{"placeholder": true}`, unreferenced), `src/screens/HomeScreen.tsx` (+ barrel export), `memory.md` (empty template); `npm uninstall @capacitor/assets` (orphaned devDep, 301 packages pruned).
+
+Deferred (human follow-ups, not safe autonomously):
+- `newArchEnabled:false` → SDK 55+ forced migration needs a tested native build.
+- Full theme-token/typography codemod (semantic hexes still inline across screens; values match the palette — mechanical but 100+ sites, needs visual QA).
+- eslint/prettier/test scaffolding (no configs exist; CI currently gates typecheck only), Android Fastlane lane, `Fastfile` `force+reject_if_possible` review, `app/` sidecar terms/privacy hardcoding.
+- OTP resend timer is client UX-only by design; abuse enforcement is the Wave 2 server rate limit (5/10min) — no change made.
+- `IS_PRODUCTION = !__DEV__` kept: preview builds intentionally report as production until an `APP_VARIANT` scheme lands.
+- 18MB `build-*.ipa` files were already untracked (Wave 0); left on disk untouched.

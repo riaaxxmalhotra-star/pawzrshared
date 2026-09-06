@@ -545,7 +545,7 @@ export default function CalendarScreen() {
       </ScrollView>
 
       {/* Booking Details Modal */}
-      <Modal visible={showBookingModal} animationType="slide" transparent>
+      <Modal visible={showBookingModal} animationType="slide" transparent onRequestClose={() => setShowBookingModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
@@ -554,6 +554,8 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 onPress={() => setShowBookingModal(false)}
                 style={styles.closeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close booking details"
               >
                 <Ionicons name="close" size={20} color={colors.gray[600]} />
               </TouchableOpacity>

@@ -253,12 +253,12 @@ export default function PetsScreen() {
       </ScrollView>
 
       {/* Pet Detail Modal */}
-      <Modal visible={!!selectedPet} animationType="slide" transparent>
+      <Modal visible={!!selectedPet} animationType="slide" transparent onRequestClose={() => setSelectedPet(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{selectedPet?.name}</Text>
-              <TouchableOpacity onPress={() => setSelectedPet(null)}>
+              <TouchableOpacity onPress={() => setSelectedPet(null)} accessibilityRole="button" accessibilityLabel="Close pet details">
                 <Ionicons name="close" size={26} color={colors.gray[600]} />
               </TouchableOpacity>
             </View>
@@ -325,12 +325,12 @@ export default function PetsScreen() {
       </Modal>
 
       {/* Add Pet Modal */}
-      <Modal visible={showAddModal} animationType="slide" transparent>
+      <Modal visible={showAddModal} animationType="slide" transparent onRequestClose={() => setShowAddModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add New Pet</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
+              <TouchableOpacity onPress={() => setShowAddModal(false)} accessibilityRole="button" accessibilityLabel="Close add pet form">
                 <Ionicons name="close" size={26} color={colors.gray[600]} />
               </TouchableOpacity>
             </View>

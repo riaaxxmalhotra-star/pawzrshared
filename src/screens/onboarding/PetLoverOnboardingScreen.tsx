@@ -361,7 +361,7 @@ export default function PetLoverOnboardingScreen() {
 
       {/* Date Picker Modal for iOS */}
       {Platform.OS === 'ios' && (
-        <Modal visible={showDatePicker} transparent animationType="slide">
+        <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={() => setShowDatePicker(false)}>
           <View style={styles.datePickerModal}>
             <View style={styles.datePickerContent}>
               <View style={styles.datePickerHeader}>

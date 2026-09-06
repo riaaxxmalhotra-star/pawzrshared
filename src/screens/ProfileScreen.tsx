@@ -132,7 +132,7 @@ export default function ProfileScreen() {
               </View>
             )}
             {isProvider && (
-              <View style={[styles.trustBadge, { backgroundColor: '#F5970B15' }]}>
+              <View style={[styles.trustBadge, { backgroundColor: '#F59E0B15' }]}>
                 <Ionicons name="diamond" size={14} color="#F59E0B" />
                 <Text style={[styles.trustBadgeText, { color: '#F59E0B' }]}>Pro</Text>
               </View>
@@ -196,7 +196,7 @@ export default function ProfileScreen() {
               onPress={() => navigation.navigate('Subscription')}
             >
               <View style={styles.menuItemLeft}>
-                <View style={[styles.menuIcon, { backgroundColor: '#F5970B15' }]}>
+                <View style={[styles.menuIcon, { backgroundColor: '#F59E0B15' }]}>
                   <Ionicons name="diamond-outline" size={20} color="#F59E0B" />
                 </View>
                 <View>
@@ -215,7 +215,7 @@ export default function ProfileScreen() {
           {!isLover && !isProvider && (
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => navigation.navigate('Pets')}
+              onPress={() => navigation.navigate('MyPets')}
             >
               <View style={styles.menuItemLeft}>
                 <View style={[styles.menuIcon, { backgroundColor: '#F9731615' }]}>

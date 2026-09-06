@@ -408,14 +408,14 @@ export default function ProviderListingsScreen() {
       </ScrollView>
 
       {/* Add/Edit Modal */}
-      <Modal visible={showAddModal} animationType="slide" transparent>
+      <Modal visible={showAddModal} animationType="slide" transparent onRequestClose={() => setShowAddModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {editingItem ? 'Edit' : 'Add'} {isSupplier ? 'Product' : 'Service'}
               </Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
+              <TouchableOpacity onPress={() => setShowAddModal(false)} accessibilityRole="button" accessibilityLabel="Close listing editor">
                 <Ionicons name="close" size={24} color={colors.gray[700]} />
               </TouchableOpacity>
             </View>

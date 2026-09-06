@@ -16,12 +16,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { colors } from '../theme/colors';
+import { colors, getRoleColor } from '../theme/colors';
+import { useAuth } from '../lib/auth';
 import { cafesApi } from '../lib/api';
 import logger from '../lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CAFE_COLOR = '#14B8A6';
 
 interface CafeDetail {
   id: string;
@@ -64,6 +64,11 @@ export default function CafeDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const cafeId = route.params?.cafeId;
+  const { user } = useAuth();
+  // Viewer-role accent: CAFE staff keep the teal brand; OWNER/LOVER consumers
+  // see their orange tab color instead of a mismatched teal.
+  const ACCENT = getRoleColor(user?.role || 'OWNER');
+  const styles = createStyles(ACCENT);
 
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
@@ -149,7 +154,7 @@ export default function CafeDetailScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={CAFE_COLOR} />
+          <ActivityIndicator size="large" color={ACCENT} />
         </View>
       </View>
     );
@@ -290,7 +295,7 @@ export default function CafeDetailScreen() {
           {/* Quick Info */}
           <View style={styles.quickInfoCard}>
             <View style={styles.quickInfoItem}>
-              <Ionicons name="location" size={20} color={CAFE_COLOR} />
+              <Ionicons name="location" size={20} color={ACCENT} />
               <View>
                 <Text style={styles.quickInfoLabel}>Location</Text>
                 <Text style={styles.quickInfoValue}>{cafe.address}</Text>
@@ -298,7 +303,7 @@ export default function CafeDetailScreen() {
             </View>
             <View style={styles.quickInfoDivider} />
             <View style={styles.quickInfoItem}>
-              <Ionicons name="time" size={20} color={CAFE_COLOR} />
+              <Ionicons name="time" size={20} color={ACCENT} />
               <View>
                 <Text style={styles.quickInfoLabel}>Hours</Text>
                 <Text style={styles.quickInfoValue}>{cafe.openTime} - {cafe.closeTime}</Text>
@@ -309,15 +314,15 @@ export default function CafeDetailScreen() {
           {/* Contact Buttons */}
           <View style={styles.contactRow}>
             <TouchableOpacity style={styles.contactButton} onPress={handleCall}>
-              <Ionicons name="call" size={20} color={CAFE_COLOR} />
+              <Ionicons name="call" size={20} color={ACCENT} />
               <Text style={styles.contactButtonText}>Call</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.contactButton} onPress={handleDirections}>
-              <Ionicons name="navigate" size={20} color={CAFE_COLOR} />
+              <Ionicons name="navigate" size={20} color={ACCENT} />
               <Text style={styles.contactButtonText}>Directions</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.contactButton} onPress={handleWebsite}>
-              <Ionicons name="globe" size={20} color={CAFE_COLOR} />
+              <Ionicons name="globe" size={20} color={ACCENT} />
               <Text style={styles.contactButtonText}>Website</Text>
             </TouchableOpacity>
           </View>
@@ -334,8 +339,8 @@ export default function CafeDetailScreen() {
             <View style={styles.amenitiesGrid}>
               {cafe.petAmenities.map((amenity, index) => (
                 <View key={index} style={styles.amenityItem}>
-                  <View style={[styles.amenityIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
-                    <Ionicons name="paw" size={16} color={CAFE_COLOR} />
+                  <View style={[styles.amenityIcon, { backgroundColor: `${ACCENT}15` }]}>
+                    <Ionicons name="paw" size={16} color={ACCENT} />
                   </View>
                   <Text style={styles.amenityText}>{amenity}</Text>
                 </View>
@@ -364,7 +369,7 @@ export default function CafeDetailScreen() {
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Upcoming Events</Text>
                 <TouchableOpacity>
-                  <Text style={[styles.seeAllText, { color: CAFE_COLOR }]}>See All</Text>
+                  <Text style={[styles.seeAllText, { color: ACCENT }]}>See All</Text>
                 </TouchableOpacity>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -390,7 +395,7 @@ export default function CafeDetailScreen() {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Reviews</Text>
               <TouchableOpacity>
-                <Text style={[styles.seeAllText, { color: CAFE_COLOR }]}>See All</Text>
+                <Text style={[styles.seeAllText, { color: ACCENT }]}>See All</Text>
               </TouchableOpacity>
             </View>
             {cafe.reviews.length === 0 ? (
@@ -411,7 +416,7 @@ export default function CafeDetailScreen() {
                 <Text style={styles.reviewComment}>{review.comment}</Text>
                 {!!review.petName && (
                 <View style={styles.reviewPet}>
-                  <Ionicons name="paw" size={12} color={CAFE_COLOR} />
+                  <Ionicons name="paw" size={12} color={ACCENT} />
                   <Text style={styles.reviewPetText}>Visited with {review.petName}</Text>
                 </View>
                 )}
@@ -482,7 +487,7 @@ export default function CafeDetailScreen() {
                     key={index}
                     style={[
                       styles.dateOption,
-                      selectedDate === date.value && { backgroundColor: CAFE_COLOR },
+                      selectedDate === date.value && { backgroundColor: ACCENT },
                     ]}
                     onPress={() => setSelectedDate(date.value)}
                   >
@@ -506,7 +511,7 @@ export default function CafeDetailScreen() {
                     key={index}
                     style={[
                       styles.timeOption,
-                      selectedTime === time && { backgroundColor: CAFE_COLOR },
+                      selectedTime === time && { backgroundColor: ACCENT },
                     ]}
                     onPress={() => setSelectedTime(time)}
                   >
@@ -529,14 +534,14 @@ export default function CafeDetailScreen() {
                   style={styles.counterButton}
                   onPress={() => setGuestCount(Math.max(1, guestCount - 1))}
                 >
-                  <Ionicons name="remove" size={24} color={CAFE_COLOR} />
+                  <Ionicons name="remove" size={24} color={ACCENT} />
                 </TouchableOpacity>
                 <Text style={styles.counterValue}>{guestCount}</Text>
                 <TouchableOpacity
                   style={styles.counterButton}
                   onPress={() => setGuestCount(Math.min(10, guestCount + 1))}
                 >
-                  <Ionicons name="add" size={24} color={CAFE_COLOR} />
+                  <Ionicons name="add" size={24} color={ACCENT} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -554,7 +559,7 @@ export default function CafeDetailScreen() {
             </View>
 
             <View style={styles.bookingNote}>
-              <Ionicons name="information-circle" size={20} color={CAFE_COLOR} />
+              <Ionicons name="information-circle" size={20} color={ACCENT} />
               <Text style={styles.bookingNoteText}>
                 Free cancellation up to 2 hours before your reservation
               </Text>
@@ -578,14 +583,14 @@ export default function CafeDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (ACCENT: string) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
   centerState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
   centerStateText: { fontSize: 15, color: colors.gray[500], marginTop: 12, textAlign: 'center', lineHeight: 22 },
-  retryButton: { marginTop: 16, backgroundColor: CAFE_COLOR, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryButton: { marginTop: 16, backgroundColor: ACCENT, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   retryButtonText: { fontSize: 15, fontWeight: '700', color: colors.white },
   backLink: { marginTop: 12, paddingVertical: 8 },
-  backLinkText: { fontSize: 14, fontWeight: '600', color: CAFE_COLOR },
+  backLinkText: { fontSize: 14, fontWeight: '600', color: ACCENT },
   noReviewsText: { fontSize: 14, color: colors.gray[500], fontStyle: 'italic' },
   heroContainer: { height: 280, position: 'relative' },
   heroImage: { width: '100%', height: '100%' },
@@ -639,12 +644,12 @@ const styles = StyleSheet.create({
   ratingText: { fontSize: 16, fontWeight: '700', color: colors.gray[900], marginLeft: 8 },
   reviewCount: { fontSize: 14, color: colors.gray[500], marginLeft: 4 },
   priceTag: {
-    backgroundColor: `${CAFE_COLOR}15`,
+    backgroundColor: `${ACCENT}15`,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
   },
-  priceText: { fontSize: 16, fontWeight: '700', color: CAFE_COLOR },
+  priceText: { fontSize: 16, fontWeight: '700', color: ACCENT },
   quickInfoCard: {
     backgroundColor: colors.gray[50],
     borderRadius: 16,
@@ -661,12 +666,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: `${CAFE_COLOR}10`,
+    backgroundColor: `${ACCENT}10`,
     paddingVertical: 12,
     borderRadius: 12,
     gap: 6,
   },
-  contactButtonText: { fontSize: 14, fontWeight: '600', color: CAFE_COLOR },
+  contactButtonText: { fontSize: 14, fontWeight: '600', color: ACCENT },
   section: { marginBottom: 24 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: colors.gray[900], marginBottom: 12 },
@@ -682,7 +687,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     right: 18,
-    backgroundColor: CAFE_COLOR,
+    backgroundColor: ACCENT,
     width: 20,
     height: 20,
     borderRadius: 10,
@@ -716,7 +721,7 @@ const styles = StyleSheet.create({
   reviewDate: { fontSize: 12, color: colors.gray[400], marginLeft: 8 },
   reviewComment: { fontSize: 14, color: colors.gray[700], lineHeight: 20, marginBottom: 8 },
   reviewPet: { flexDirection: 'row', alignItems: 'center' },
-  reviewPetText: { fontSize: 12, color: CAFE_COLOR, marginLeft: 4 },
+  reviewPetText: { fontSize: 12, color: ACCENT, marginLeft: 4 },
   galleryImage: { width: 140, height: 100, borderRadius: 12, marginRight: 12 },
   bottomBar: {
     position: 'absolute',
@@ -743,7 +748,7 @@ const styles = StyleSheet.create({
   bookButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: CAFE_COLOR,
+    backgroundColor: ACCENT,
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 16,
@@ -798,7 +803,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: `${CAFE_COLOR}15`,
+    backgroundColor: `${ACCENT}15`,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -814,7 +819,7 @@ const styles = StyleSheet.create({
   bookingNote: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: `${CAFE_COLOR}10`,
+    backgroundColor: `${ACCENT}10`,
     padding: 16,
     borderRadius: 12,
     gap: 12,
@@ -828,7 +833,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.gray[100],
   },
   confirmButton: {
-    backgroundColor: CAFE_COLOR,
+    backgroundColor: ACCENT,
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',

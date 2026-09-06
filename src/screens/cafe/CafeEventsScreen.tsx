@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,14 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors, roleColors } from '../../theme/colors';
+import { eventsApi } from '../../lib/api';
+import logger from '../../lib/logger';
 
 // Use centralized role color
 const CAFE_COLOR = roleColors.CAFE;
@@ -59,71 +62,64 @@ export default function CafeEventsScreen() {
   const navigation = useNavigation<any>();
   const [activeTab, setActiveTab] = useState<EventType>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [events, setEvents] = useState<PetEvent[]>([]);
+
+  // Real data: the cafe's own events. No mock fallback — an empty/error state
+  // is honest, fabricated events are not.
+  const loadEvents = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const data = await eventsApi.getMyEvents();
+      const list = data.events ?? data.data ?? data ?? [];
+      setEvents(
+        (Array.isArray(list) ? list : [])
+          .map((item: any): PetEvent | null => {
+            const id = item?.id ?? item?._id;
+            if (id === undefined || id === null) return null;
+            return {
+              id: String(id),
+              title: item.title ?? 'Untitled event',
+              description: item.description ?? '',
+              eventType: String(item.eventType ?? item.type ?? 'meetup'),
+              date: item.date ?? '',
+              startTime: item.startTime ?? item.time ?? '',
+              endTime: item.endTime ?? '',
+              coverImage: item.coverImage ?? item.image ?? '',
+              price: Number(item.price ?? 0),
+              capacity: Number(item.capacity ?? 0),
+              bookedCount: Number(item.bookedCount ?? item.booked ?? 0),
+              status: item.status ?? 'upcoming',
+            };
+          })
+          .filter((e): e is PetEvent => e !== null)
+      );
+    } catch (error) {
+      logger.error('Failed to load my events:', error);
+      setEvents([]);
+      setLoadError(error instanceof Error ? error.message : 'Could not load events.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  // Re-fetch when returning from CreateEvent so the new event appears.
+  useFocusEffect(
+    useCallback(() => {
+      loadEvents();
+    }, [loadEvents])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    loadEvents();
   };
-
-  // Mock data
-  const events: PetEvent[] = [
-    {
-      id: '1',
-      title: 'Sunday Pet Meetup',
-      description: 'Bring your furry friends for a fun afternoon of socializing!',
-      eventType: 'meetup',
-      date: '2025-02-16',
-      startTime: '3:00 PM',
-      endTime: '6:00 PM',
-      coverImage: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400',
-      price: 299,
-      capacity: 30,
-      bookedCount: 24,
-      status: 'upcoming',
-    },
-    {
-      id: '2',
-      title: 'Adoption Drive - Find Your Fur Baby',
-      description: 'Partner event with local shelter. Meet adoptable pets!',
-      eventType: 'adoption',
-      date: '2025-02-22',
-      startTime: '11:00 AM',
-      endTime: '5:00 PM',
-      coverImage: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=400',
-      price: 0,
-      capacity: 50,
-      bookedCount: 32,
-      status: 'upcoming',
-    },
-    {
-      id: '3',
-      title: 'Bruno\'s 3rd Birthday Bash',
-      description: 'Private birthday party for Bruno the Golden Retriever',
-      eventType: 'birthday',
-      date: '2025-02-23',
-      startTime: '4:00 PM',
-      endTime: '7:00 PM',
-      coverImage: 'https://images.unsplash.com/photo-1530281700549-e82e7bf110d6?w=400',
-      price: 1500,
-      capacity: 15,
-      bookedCount: 8,
-      status: 'upcoming',
-    },
-    {
-      id: '4',
-      title: 'Pet Photography Workshop',
-      description: 'Learn how to capture perfect moments with your pets',
-      eventType: 'photoshoot',
-      date: '2025-03-01',
-      startTime: '10:00 AM',
-      endTime: '1:00 PM',
-      coverImage: 'https://images.unsplash.com/photo-1583512603805-3cc6b41f3edb?w=400',
-      price: 499,
-      capacity: 20,
-      bookedCount: 12,
-      status: 'draft',
-    },
-  ];
 
   const filteredEvents = events.filter(event => {
     if (activeTab === 'all') return true;
@@ -141,7 +137,9 @@ export default function CafeEventsScreen() {
   ];
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
     const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return dateStr;
     return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
@@ -170,12 +168,15 @@ export default function CafeEventsScreen() {
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabsContainer}>
+      <View style={styles.tabsContainer} accessibilityRole="tablist">
         {tabs.map((tab) => (
           <TouchableOpacity
             key={tab.id}
             style={[styles.tab, activeTab === tab.id && { backgroundColor: CAFE_COLOR }]}
             onPress={() => setActiveTab(tab.id)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === tab.id }}
+            accessibilityLabel={`${tab.label} events`}
           >
             <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>
               {tab.label}
@@ -190,7 +191,26 @@ export default function CafeEventsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={CAFE_COLOR} />}
         contentContainerStyle={styles.listContainer}
       >
-        {filteredEvents.length === 0 ? (
+        {loading ? (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={CAFE_COLOR} />
+            <Text style={styles.centerStateText}>Loading your events...</Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.centerState}>
+            <Ionicons name="cloud-offline-outline" size={48} color={colors.gray[300]} />
+            <Text style={styles.centerStateTitle}>Could not load events</Text>
+            <Text style={styles.centerStateText}>{loadError}</Text>
+            <TouchableOpacity
+              style={[styles.emptyButton, { backgroundColor: CAFE_COLOR, marginTop: 16 }]}
+              onPress={() => { setLoading(true); loadEvents(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading events"
+            >
+              <Text style={styles.emptyButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : filteredEvents.length === 0 ? (
           <View style={styles.emptyState}>
             <View style={[styles.emptyIcon, { backgroundColor: `${CAFE_COLOR}15` }]}>
               <Ionicons name="calendar-outline" size={48} color={CAFE_COLOR} />
@@ -247,7 +267,7 @@ export default function CafeEventsScreen() {
                     {event.price === 0 ? 'Free' : `₹${event.price}`}
                   </Text>
                   <View style={styles.capacityBar}>
-                    <View style={[styles.capacityFill, { width: `${(event.bookedCount / event.capacity) * 100}%`, backgroundColor: CAFE_COLOR }]} />
+                    <View style={[styles.capacityFill, { width: `${event.capacity > 0 ? (event.bookedCount / event.capacity) * 100 : 0}%`, backgroundColor: CAFE_COLOR }]} />
                   </View>
                 </View>
               </View>
@@ -328,4 +348,7 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: 15, color: colors.gray[500], marginBottom: 24 },
   emptyButton: { paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12 },
   emptyButtonText: { color: colors.white, fontSize: 16, fontWeight: '600' },
+  centerState: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 24 },
+  centerStateTitle: { fontSize: 20, fontWeight: '700', color: colors.gray[900], marginTop: 16, textAlign: 'center' },
+  centerStateText: { fontSize: 15, color: colors.gray[500], marginTop: 8, textAlign: 'center', lineHeight: 22 },
 });

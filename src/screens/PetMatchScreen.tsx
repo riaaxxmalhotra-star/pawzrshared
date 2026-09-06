@@ -454,6 +454,9 @@ export default function PetMatchScreen() {
           style={[styles.actionBtn, styles.nopeBtn]}
           onPress={() => !isProcessing && swipeLeft()}
           disabled={isProcessing}
+          accessibilityRole="button"
+          accessibilityLabel="Pass on this pet"
+          accessibilityHint="Shows the next pet"
         >
           <Ionicons name="close" size={32} color="#EF4444" />
         </TouchableOpacity>
@@ -461,13 +464,16 @@ export default function PetMatchScreen() {
           style={[styles.actionBtn, styles.likeBtn]}
           onPress={() => !isProcessing && swipeRight()}
           disabled={isProcessing}
+          accessibilityRole="button"
+          accessibilityLabel="Like this pet"
+          accessibilityHint="Likes the pet and shows the next one"
         >
           <Ionicons name="heart" size={32} color="#F97316" />
         </TouchableOpacity>
       </View>
 
       {/* Match Modal */}
-      <Modal visible={showMatchModal} animationType="fade" transparent>
+      <Modal visible={showMatchModal} animationType="fade" transparent onRequestClose={() => setShowMatchModal(false)}>
         <View style={styles.matchOverlay}>
           <View style={styles.matchContent}>
             <Text style={styles.matchTitle}>It's a Match!</Text>

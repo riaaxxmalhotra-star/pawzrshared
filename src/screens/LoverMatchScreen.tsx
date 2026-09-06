@@ -656,6 +656,9 @@ export default function LoverMatchScreen() {
           style={[styles.actionBtn, styles.nopeBtn]}
           onPress={() => !isProcessing && swipeLeft()}
           disabled={isProcessing}
+          accessibilityRole="button"
+          accessibilityLabel="Pass on this pet lover"
+          accessibilityHint="Shows the next pet lover"
         >
           <Ionicons name="close" size={32} color="#EF4444" />
         </TouchableOpacity>
@@ -663,13 +666,16 @@ export default function LoverMatchScreen() {
           style={[styles.actionBtn, styles.likeBtn]}
           onPress={() => !isProcessing && swipeRight()}
           disabled={isProcessing}
+          accessibilityRole="button"
+          accessibilityLabel="Like this pet lover"
+          accessibilityHint="Likes the pet lover and shows the next one"
         >
           <Ionicons name="heart" size={32} color="#F97316" />
         </TouchableOpacity>
       </View>
 
       {/* Bumble-Style Match Modal with Confetti */}
-      <Modal visible={showMatchModal} animationType="none" transparent>
+      <Modal visible={showMatchModal} animationType="none" transparent onRequestClose={() => setShowMatchModal(false)}>
         <Animated.View style={[styles.matchOverlay, { opacity: modalOpacity }]}>
           {/* Confetti Animation */}
           <ConfettiView particles={confettiParticles} visible={showConfetti} />

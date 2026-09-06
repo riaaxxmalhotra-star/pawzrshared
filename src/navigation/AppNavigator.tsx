@@ -3,9 +3,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useAuth } from '../lib/auth';
-import { colors } from '../theme/colors';
+import { colors, roleColors, getRoleLightColor } from '../theme/colors';
 import { FEATURES } from '../config/featureFlags';
 import { getTabBarHeight, getTabBarFontSize, isTablet } from '../utils/responsive';
 import { navigationRef } from './navigationRef';
@@ -129,12 +129,21 @@ export type MainTabParamList = {
   Swipe: undefined;  // Role-based: Owners see LoverMatch, Lovers see PetMatch
   Events: undefined; // For OWNER/LOVER: browse events; For CAFE: manage events
   Bookings: undefined; // For CAFE: manage bookings
-  Chat: undefined;
+  // Optional match context: swipe screens pass the new match so Messages can
+  // resolve (or create) the deterministic thread. Absent for the plain tab.
+  Chat:
+    | {
+        matchedUser?: { id: string; name: string; type?: string; photo?: string };
+        petName?: string;
+        petId?: string;
+      }
+    | undefined;
   ProfileTab: undefined;
 };
 
 export type ProfileStackParamList = {
   Profile: undefined;
+  MyPets: undefined;
   PawzrWallet: undefined;
   Subscription: undefined;
   AadhaarVerification: undefined;
@@ -142,10 +151,17 @@ export type ProfileStackParamList = {
   Notifications: undefined;
 };
 
+export type CafeEventsStackParamList = {
+  CafeEvents: undefined;
+  CreateEvent: undefined;
+  EventDetail: { eventId: string };
+};
+
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
+const CafeEventsStack = createNativeStackNavigator<CafeEventsStackParamList>();
 const MainTab = createBottomTabNavigator<MainTabParamList>();
 
 function AuthNavigator() {
@@ -205,10 +221,28 @@ function CafeHomeNavigator() {
       <HomeStack.Screen name="VendorCRM" component={VendorCRMScreen} />
       <HomeStack.Screen name="Subscription" component={SubscriptionScreen} />
       <HomeStack.Screen name="PawzrWallet" component={PawzrWalletScreen} />
+      {/* Shared event screens: dashboard cards and deep links (pawzr://events,
+          pawzr://events/<id>, pawzr://cafes/<id>) resolve under the Home tab. */}
+      <HomeStack.Screen name="EventsList" component={EventsListScreen} />
+      <HomeStack.Screen name="EventDetail" component={EventDetailScreen} />
+      <HomeStack.Screen name="CafeDetail" component={CafeDetailScreen} />
       {FEATURES.NOTIFICATIONS && (
         <HomeStack.Screen name="Notifications" component={NotificationsScreen} />
       )}
     </HomeStack.Navigator>
+  );
+}
+
+// Cafe Events tab stack: CafeEventsScreen navigates to CreateEvent and
+// EventDetail, so the tab must host all three — previously the tab rendered
+// CafeEventsScreen directly and both navigations crashed.
+function CafeEventsNavigator() {
+  return (
+    <CafeEventsStack.Navigator screenOptions={{ headerShown: false }}>
+      <CafeEventsStack.Screen name="CafeEvents" component={CafeEventsScreen} />
+      <CafeEventsStack.Screen name="CreateEvent" component={CreateEventScreen} />
+      <CafeEventsStack.Screen name="EventDetail" component={EventDetailScreen} />
+    </CafeEventsStack.Navigator>
   );
 }
 
@@ -217,6 +251,9 @@ function ProfileNavigator() {
   return (
     <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
       <ProfileStack.Screen name="Profile" component={ProfileScreen} />
+      {/* MyPets lives here (not just HomeStack) so ProfileScreen's "My Pets"
+          menu item resolves — previously it navigated to an unregistered 'Pets'. */}
+      <ProfileStack.Screen name="MyPets" component={MyPetsScreen} />
       <ProfileStack.Screen name="PawzrWallet" component={PawzrWalletScreen} />
       <ProfileStack.Screen name="Subscription" component={SubscriptionScreen} />
       <ProfileStack.Screen name="AadhaarVerification" component={AadhaarVerificationScreen} />
@@ -239,15 +276,8 @@ function SwipeScreen() {
   return <LoverMatchScreen />;
 }
 
-// Role-specific colors
-const roleColors: Record<string, string> = {
-  OWNER: '#F97316',
-  LOVER: '#F97316',    // Orange (same as Owner)
-  VET: '#10B981',
-  GROOMER: '#8B5CF6',
-  SUPPLIER: '#3B82F6',
-  CAFE: '#14B8A6',     // Teal
-};
+// Role colors come from the theme (`src/theme/colors.ts`) — the single source
+// of truth shared with RoleSelection, onboarding, and Dashboard.
 
 function MainNavigator() {
   const { user } = useAuth();
@@ -257,7 +287,12 @@ function MainNavigator() {
   const isCafe = userRole === 'CAFE';
   const isProvider = ['VET', 'GROOMER', 'SUPPLIER'].includes(userRole);
   const isConsumer = isOwner || isLover;
-  const roleColor = roleColors[userRole] || colors.primary;
+  const roleColor = roleColors[userRole as keyof typeof roleColors] || colors.primary;
+  const roleTint = getRoleLightColor(userRole);
+  // Reactive dimensions: static Dimensions.get() freezes at launch and breaks
+  // on rotation — useWindowDimensions re-renders the tab bar instead.
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
+  const tabletLayout = isTablet({ width: winWidth, height: winHeight });
 
   // Get appropriate label for the second tab based on role
   const getSecondTabLabel = () => {
@@ -265,7 +300,7 @@ function MainNavigator() {
       case 'LOVER': return 'Match';
       case 'OWNER': return 'Find';
       case 'VET': return 'Schedule';
-      case 'GROOMER': return 'Bookings';
+      case 'GROOMER': return 'Schedule';
       case 'SUPPLIER': return 'Orders';
       case 'CAFE': return 'Events';
       default: return 'Activity';
@@ -276,7 +311,7 @@ function MainNavigator() {
   const getSecondTabIcon = (focused: boolean) => {
     const wrapperStyle = [
       styles.tabIconWrapper,
-      focused && { backgroundColor: `${roleColor}15` }
+      focused && { backgroundColor: roleTint }
     ];
 
     switch (userRole) {
@@ -365,28 +400,28 @@ function MainNavigator() {
 
             // ALWAYS use consistent wrapper to prevent visual shrinking
             return (
-              <View style={[styles.tabIconWrapper, focused && { backgroundColor: `${roleColor}15` }]}>
+              <View style={[styles.tabIconWrapper, focused && { backgroundColor: roleTint }]}>
                 <Ionicons name={iconName} size={24} color={color} />
               </View>
             );
           },
           tabBarActiveTintColor: roleColor,
-          tabBarInactiveTintColor: colors.gray[400],
+          tabBarInactiveTintColor: colors.gray[500],
           headerShown: false,
           tabBarShowLabel: true,
           tabBarLabelStyle: {
             fontSize: getTabBarFontSize(),
             fontWeight: '600',
             marginTop: -2,
-            marginBottom: isTablet() ? 8 : 6,
+            marginBottom: tabletLayout ? 8 : 6,
           },
           tabBarStyle: {
             backgroundColor: colors.white,
             borderTopColor: colors.gray[100],
             borderTopWidth: 1,
             height: getTabBarHeight(),
-            paddingTop: isTablet() ? 12 : 10,
-            paddingHorizontal: isTablet() ? 40 : 0,
+            paddingTop: tabletLayout ? 12 : 10,
+            paddingHorizontal: tabletLayout ? 40 : 0,
             shadowColor: colors.black,
             shadowOffset: { width: 0, height: -4 },
             shadowOpacity: 0.08,
@@ -398,37 +433,31 @@ function MainNavigator() {
         <MainTab.Screen
           name="Home"
           component={CafeHomeNavigator}
-          options={{ tabBarLabel: 'Home' }}
+          options={{ tabBarLabel: 'Home', tabBarAccessibilityLabel: 'Home' }}
         />
         <MainTab.Screen
           name="Events"
-          component={CafeEventsScreen}
-          options={{ tabBarLabel: 'Events' }}
+          component={CafeEventsNavigator}
+          options={{ tabBarLabel: 'Events', tabBarAccessibilityLabel: 'Events, manage your events' }}
         />
         <MainTab.Screen
           name="Bookings"
           component={CafeBookingsScreen}
-          options={{ tabBarLabel: 'Bookings' }}
+          options={{ tabBarLabel: 'Bookings', tabBarAccessibilityLabel: 'Bookings, manage table bookings' }}
         />
         <MainTab.Screen
           name="Chat"
           component={MessagesScreen}
+          // No badge: there is no unread-count source, so a static badge would lie.
           options={{
             tabBarLabel: 'Chat',
-            tabBarBadge: 3,
-            tabBarBadgeStyle: {
-              backgroundColor: roleColor,
-              fontSize: 10,
-              minWidth: 18,
-              height: 18,
-              borderRadius: 9,
-            },
+            tabBarAccessibilityLabel: 'Chat, your conversations',
           }}
         />
         <MainTab.Screen
           name="ProfileTab"
           component={ProfileNavigator}
-          options={{ tabBarLabel: 'Profile' }}
+          options={{ tabBarLabel: 'Profile', tabBarAccessibilityLabel: 'Profile, your account' }}
         />
       </MainTab.Navigator>
     );
@@ -449,7 +478,7 @@ function MainNavigator() {
             case 'Events':
               // ALWAYS use consistent wrapper to prevent visual shrinking
               return (
-                <View style={[styles.tabIconWrapper, focused && { backgroundColor: `${roleColor}15` }]}>
+                <View style={[styles.tabIconWrapper, focused && { backgroundColor: roleTint }]}>
                   <Ionicons
                     name={focused ? 'calendar' : 'calendar-outline'}
                     size={24}
@@ -469,28 +498,28 @@ function MainNavigator() {
 
           // ALWAYS use consistent wrapper to prevent visual shrinking
           return (
-            <View style={[styles.tabIconWrapper, focused && { backgroundColor: `${roleColor}15` }]}>
+            <View style={[styles.tabIconWrapper, focused && { backgroundColor: roleTint }]}>
               <Ionicons name={iconName} size={24} color={color} />
             </View>
           );
         },
         tabBarActiveTintColor: roleColor,
-        tabBarInactiveTintColor: colors.gray[400],
+        tabBarInactiveTintColor: colors.gray[500],
         headerShown: false,
         tabBarShowLabel: true,
         tabBarLabelStyle: {
           fontSize: getTabBarFontSize(),
           fontWeight: '600',
           marginTop: -2,
-          marginBottom: isTablet() ? 8 : 6,
+          marginBottom: tabletLayout ? 8 : 6,
         },
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.gray[100],
           borderTopWidth: 1,
           height: getTabBarHeight(),
-          paddingTop: isTablet() ? 12 : 10,
-          paddingHorizontal: isTablet() ? 40 : 0,
+          paddingTop: tabletLayout ? 12 : 10,
+          paddingHorizontal: tabletLayout ? 40 : 0,
           shadowColor: colors.black,
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.08,
@@ -503,7 +532,7 @@ function MainNavigator() {
       <MainTab.Screen
         name="Home"
         component={HomeNavigator}
-        options={{ tabBarLabel: 'Home' }}
+        options={{ tabBarLabel: 'Home', tabBarAccessibilityLabel: 'Home' }}
       />
 
       {/* Second Tab - Role-based content */}
@@ -513,6 +542,7 @@ function MainNavigator() {
         options={{
           tabBarLabel: getSecondTabLabel(),
           tabBarActiveTintColor: roleColor,
+          tabBarAccessibilityLabel: `${getSecondTabLabel()}, second tab`,
         }}
       />
 
@@ -521,7 +551,7 @@ function MainNavigator() {
         <MainTab.Screen
           name="Events"
           component={EventsListScreen}
-          options={{ tabBarLabel: 'Events' }}
+          options={{ tabBarLabel: 'Events', tabBarAccessibilityLabel: 'Events, browse pet events' }}
         />
       )}
 
@@ -529,16 +559,10 @@ function MainNavigator() {
       <MainTab.Screen
         name="Chat"
         component={MessagesScreen}
+        // No badge: there is no unread-count source, so a static badge would lie.
         options={{
           tabBarLabel: 'Chat',
-          tabBarBadge: 3,
-          tabBarBadgeStyle: {
-            backgroundColor: roleColor,
-            fontSize: 10,
-            minWidth: 18,
-            height: 18,
-            borderRadius: 9,
-          },
+          tabBarAccessibilityLabel: 'Chat, your conversations',
         }}
       />
 
@@ -546,7 +570,7 @@ function MainNavigator() {
       <MainTab.Screen
         name="ProfileTab"
         component={ProfileNavigator}
-        options={{ tabBarLabel: 'Profile' }}
+        options={{ tabBarLabel: 'Profile', tabBarAccessibilityLabel: 'Profile, your account' }}
       />
     </MainTab.Navigator>
   );

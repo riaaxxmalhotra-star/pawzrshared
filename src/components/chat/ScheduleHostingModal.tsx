@@ -110,12 +110,12 @@ export default function ScheduleHostingModal({
   const isValid = nights > 0;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close schedule hosting dialog">
               <Ionicons name="close" size={24} color={colors.gray[600]} />
             </TouchableOpacity>
             <Text style={styles.title}>Schedule Hosting</Text>
